@@ -51,6 +51,7 @@ exe_kwargs = dict(
     a_binaries=[],
     a_zipfiles=[],
     a_datas=[],
+    exclude_binaries=True,  # one-directory mode: COLLECT() gathers the files
     name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
@@ -67,10 +68,11 @@ exe_kwargs = dict(
 if sys.platform == "darwin":
     exe_kwargs["argv_emulation"] = False
 
-if (ROOT / "assets" / "icon.ico").exists() and os.name == "nt":
+# Windows embeds icon.ico into the .exe. On Linux/macOS PyInstaller's EXE
+# target does not accept a PNG icon, so the icon is simply bundled via
+# `datas` (see Analysis above) and applied at runtime instead.
+if os.name == "nt" and (ROOT / "assets" / "icon.ico").exists():
     exe_kwargs["icon"] = str(ROOT / "assets" / "icon.ico")
-elif (ROOT / "assets" / "icon.png").exists() and os.name != "nt":
-    exe_kwargs["icon"] = str(ROOT / "assets" / "icon.png")
 
 exe = EXE(**exe_kwargs)  # noqa: F821
 

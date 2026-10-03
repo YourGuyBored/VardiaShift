@@ -119,9 +119,15 @@ class Application:
             self.qt_app = QApplication(sys.argv)
             self.qt_app.setApplicationVersion(APP_VERSION)
             self.qt_app.setOrganizationName(APP_NAME)
+        from PySide6.QtGui import QIcon
+
         from app.ui.theme import apply_theme
+        from app.utils.paths import resource_path
 
         apply_theme(self.qt_app)
+        icon_path = resource_path("assets/icon.png")
+        if icon_path.is_file():
+            self.qt_app.setWindowIcon(QIcon(str(icon_path)))
         return self.qt_app
 
     # -- flow ----------------------------------------------------------------
