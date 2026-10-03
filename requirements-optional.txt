@@ -1,0 +1,9 @@
+# Optional dependencies that unlock extra features.
+#
+# Install with:
+#     python -m pip install -r requirements-optional.txt
+
+# Webcam QR scanning in the attendance kiosk.
+# Without this package Shiftora still works fully with USB QR readers
+# (keyboard-wedge) and manual employee-ID entry.
+opencv-python>=4.8
