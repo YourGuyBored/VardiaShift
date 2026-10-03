@@ -815,3 +815,68 @@ def test_application_logout_flow_returns_to_login(context, qt_app, admin_session
         if app._login is not None:
             app._login.close()
         app.shutdown()
+
+
+# -- table badge rendering ---------------------------------------------------
+def test_status_badge_uses_tinted_background_not_tinted_blue(context, qt_app):
+    """Qt only understands #AARRGGBB - a trailing alpha corrupts the color."""
+    from app.ui.widgets import STATUS_COLORS, StatusBadge, _tinted
+    from app.ui import theme
+
+    assert _tinted("#94A3B8", "1A") == "#1A94A3B8"
+    assert _tinted("not-a-color", "1A") == "not-a-color"
+
+    badge = StatusBadge("not_in")
+    assert badge.text() == "Not In"
+    assert "#1A94A3B8" in badge.styleSheet()  # gray tint, not olive
+    assert "94A3B81A" not in badge.styleSheet()
+
+    working = StatusBadge("open")
+    assert working.text() == "Working"
+    assert theme.SUCCESS in working.styleSheet()
+
+
+def test_refreshing_tables_leaves_no_ghost_widgets(context, qt_app, team):
+    """Repopulating a badge table must remove replaced cell widgets."""
+    from app.ui.dashboard import DashboardPage
+    from app.ui.employee_management import EmployeePage
+
+    dashboard = DashboardPage(context)
+    employees = EmployeePage(context)
+
+    for _ in range(3):
+        dashboard.refresh()
+        employees.refresh()
+
+    for table in (dashboard._table, employees._table):
+        holders = [
+            table.cellWidget(row, column)
+            for row in range(table.rowCount())
+            for column in range(table.columnCount())
+            if table.cellWidget(row, column) is not None
+        ]
+        # Exactly one badge holder per row, all inside the table viewport.
+        assert len(holders) == table.rowCount()
+        for holder in holders:
+            assert holder.parent() is table.viewport() or holder.parent() is table
+        # No detached ghost widgets lingering in the viewport either.
+        lingering = [
+            child for child in table.viewport().children() if child.isWidgetType()
+        ]
+        assert len(lingering) == table.rowCount()
+
+
+def test_badge_rows_are_tall_enough(context, qt_app, team):
+    from app.ui.dashboard import DashboardPage
+    from app.ui.employee_management import EmployeePage
+
+    for page in (DashboardPage(context), EmployeePage(context)):
+        assert page._table.verticalHeader().defaultSectionSize() >= 30
+
+
+def test_stat_tile_caption_wraps_instead_of_clipping(context, qt_app):
+    from app.ui.widgets import StatTile
+
+    tile = StatTile("Currently Working", "12")
+    assert tile._value.text() == "12"
+    assert tile.value_text() == "12"

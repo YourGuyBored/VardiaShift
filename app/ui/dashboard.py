@@ -26,6 +26,7 @@ from app.ui.widgets import (
     ProgressBarRow,
     StatTile,
     StatusBadge,
+    clear_table_widgets,
 )
 
 COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Today", "This Week", "Goal"]
@@ -149,6 +150,7 @@ class DashboardPage(QWidget):
         self._table = QTableWidget(0, len(COLUMNS))
         self._table.setHorizontalHeaderLabels(COLUMNS)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(36)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -255,6 +257,7 @@ class DashboardPage(QWidget):
         if self._filter != "all":
             rows = [row for row in rows if row.status == self._filter]
 
+        clear_table_widgets(self._table)
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):
             employee = row.employee

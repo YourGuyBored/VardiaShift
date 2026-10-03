@@ -34,6 +34,7 @@ from app.ui.widgets import (
     PrimaryButton,
     ProgressBarRow,
     StatusBadge,
+    clear_table_widgets,
 )
 
 HISTORY_COLUMNS = ["Date", "Time In", "Time Out", "Hours", "Status"]
@@ -446,6 +447,7 @@ class AttendancePage(QWidget):
         table = QTableWidget(0, len(columns))
         table.setHorizontalHeaderLabels(columns)
         table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(36)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -567,6 +569,7 @@ class AttendancePage(QWidget):
             f"{len(records)} record(s)  •  {clock.format_duration(totals['minutes'])} recorded"
         )
 
+        clear_table_widgets(self._today_table)
         self._today_table.setRowCount(len(records))
         for index, record in enumerate(records):
             minutes = record.duration_minutes
@@ -615,6 +618,7 @@ class AttendancePage(QWidget):
         start, end, label = self._range_bounds()
         records = self.context.attendance.employee_history(employee, start, end)
 
+        clear_table_widgets(self._history_table)
         self._history_table.setRowCount(len(records))
         total = 0
         for index, record in enumerate(records):
@@ -693,6 +697,7 @@ class AttendancePage(QWidget):
         clock = self.context.clock
         now = clock.now()
         records = self.context.attendance.open_sessions()
+        clear_table_widgets(self._open_table)
         self._open_table.setRowCount(len(records))
         for index, record in enumerate(records):
             from app.utils.time_utils import TimeUtils

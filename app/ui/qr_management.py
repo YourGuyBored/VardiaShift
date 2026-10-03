@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from app.constants import QR_EMPLOYEE, QR_TIME_IN, QR_TIME_OUT
 from app.ui import theme
-from app.ui.widgets import Card, EmptyState, PrimaryButton
+from app.ui.widgets import Card, EmptyState, PrimaryButton, clear_table_widgets
 
 EMPLOYEE_COLUMNS = ["Employee ID", "Full Name", "Department", "Status", "Date Added"]
 
@@ -329,6 +329,7 @@ class QRManagementPage(QWidget):
         self._table = QTableWidget(0, len(EMPLOYEE_COLUMNS))
         self._table.setHorizontalHeaderLabels(EMPLOYEE_COLUMNS)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(36)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -489,6 +490,7 @@ class QRManagementPage(QWidget):
     def _load_employees(self) -> None:
         search = self._search.text().strip().lower()
         employees = self.context.employees.list(search=search)
+        clear_table_widgets(self._table)
         self._table.setRowCount(len(employees))
         for index, employee in enumerate(employees):
             values = [

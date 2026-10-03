@@ -29,6 +29,6 @@ First public release.
 * Settings persisted in SQLite: organisation, time zone, date/time formats,
   work week, goals, attendance rules, kiosk behaviour, security.
 * Audit log viewer with search, action filter and CSV export.
-* 295 automated pytest tests covering services, QR, reports, backup and GUI.
+* 303 automated pytest tests covering services, QR, reports, backup and GUI.
 * Windows build script, Linux build script, PyInstaller spec, and GitHub
   Actions workflows for tests and releases.

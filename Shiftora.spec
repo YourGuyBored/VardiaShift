@@ -4,10 +4,13 @@
 Used by build_windows.bat / build_linux.sh and by the GitHub release workflow:
 
     pyinstaller --noconfirm Shiftora.spec
+
+NOTE: EXE() arguments are intentionally positional (pyz, scripts, binaries,
+zipfiles, datas) - this is the canonical one-directory form. A keyword-style
+variant was found to silently drop the .pyz archive from the bundle.
 """
 
 import os
-import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)  # noqa: F821 - provided by PyInstaller
@@ -45,13 +48,19 @@ a = Analysis(  # noqa: F821 - provided by PyInstaller
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)  # noqa: F821
 
-exe_kwargs = dict(
-    pyz=pyz,
-    a_scripts=a.scripts,
-    a_binaries=[],
-    a_zipfiles=[],
-    a_datas=[],
-    exclude_binaries=True,  # one-directory mode: COLLECT() gathers the files
+# Windows embeds icon.ico into the .exe. On Linux/macOS the icon is bundled
+# via `datas` (see Analysis above) and applied at runtime instead.
+exe_icon = (
+    str(ROOT / "assets" / "icon.ico")
+    if os.name == "nt" and (ROOT / "assets" / "icon.ico").exists()
+    else None
+)
+
+exe = EXE(  # noqa: F821
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
     name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
@@ -63,18 +72,8 @@ exe_kwargs = dict(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=exe_icon,
 )
-
-if sys.platform == "darwin":
-    exe_kwargs["argv_emulation"] = False
-
-# Windows embeds icon.ico into the .exe. On Linux/macOS PyInstaller's EXE
-# target does not accept a PNG icon, so the icon is simply bundled via
-# `datas` (see Analysis above) and applied at runtime instead.
-if os.name == "nt" and (ROOT / "assets" / "icon.ico").exists():
-    exe_kwargs["icon"] = str(ROOT / "assets" / "icon.ico")
-
-exe = EXE(**exe_kwargs)  # noqa: F821
 
 coll = COLLECT(  # noqa: F821
     exe,

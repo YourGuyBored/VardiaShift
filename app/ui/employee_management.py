@@ -24,7 +24,13 @@ from PySide6.QtWidgets import (
 from app.constants import WEEKLY_GOAL_PRESETS
 from app.services.employee_service import EmployeeServiceError
 from app.ui import theme
-from app.ui.widgets import ActiveBadge, Card, EmptyState, PrimaryButton
+from app.ui.widgets import (
+    ActiveBadge,
+    Card,
+    EmptyState,
+    PrimaryButton,
+    clear_table_widgets,
+)
 from app.utils.validation import ValidationError, validate_employee_payload
 
 COLUMNS = ["Employee ID", "Full Name", "Department", "Position", "Status", "Date Added", "Weekly Goal"]
@@ -253,6 +259,7 @@ class EmployeePage(QWidget):
         self._table = QTableWidget(0, len(COLUMNS))
         self._table.setHorizontalHeaderLabels(COLUMNS)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(36)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -441,6 +448,7 @@ class EmployeePage(QWidget):
         clock = self.context.clock
         default_goal = self.context.settings.settings.default_weekly_goal_hours
 
+        clear_table_widgets(self._table)
         self._table.setRowCount(len(employees))
         for index, employee in enumerate(employees):
             goal_hours = employee.goal_hours(default_goal)

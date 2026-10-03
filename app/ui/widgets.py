@@ -81,6 +81,8 @@ class StatTile(QFrame):
 
         caption = QLabel(label.upper())
         caption.setObjectName("StatLabel")
+        caption.setWordWrap(True)
+        caption.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         layout.addWidget(self._value)
         layout.addWidget(caption)
@@ -92,6 +94,52 @@ class StatTile(QFrame):
 
     def value_text(self) -> str:
         return self._value.text()
+
+
+def _tinted(color: str, alpha_hex: str) -> str:
+    """Apply an alpha channel to a ``#RRGGBB`` color.
+
+    Qt stylesheets only understand ``#AARRGGBB`` (alpha FIRST) - appending the
+    alpha bytes at the end silently tints the blue channel instead.
+    """
+    text = color.lstrip("#")
+    if len(text) != 6:
+        return color
+    return f"#{alpha_hex}{text}"
+
+
+def badge_stylesheet(color: str) -> str:
+    return (
+        f"color: {color}; background: {_tinted(color, '1A')};"
+        f"border: 1px solid {_tinted(color, '55')};"
+        f"border-radius: 10px; padding: 2px 9px; font-size: 11px; font-weight: 700;"
+    )
+
+
+def clear_table_widgets(table) -> None:
+    """Remove every cell widget before repopulating a table.
+
+    ``setCellWidget`` does NOT delete the widget it replaces, so refreshing a
+    table without this leaves ghost widgets painted at stale positions.
+    Deletion is immediate (``shiboken6.delete``) rather than ``deleteLater``,
+    which only fires once control returns to a running event loop - too late
+    for code paths that repopulate and repaint synchronously.
+    """
+    import shiboken6
+
+    for row in range(table.rowCount()):
+        for column in range(table.columnCount()):
+            widget = table.cellWidget(row, column)
+            if widget is None:
+                continue
+            table.removeCellWidget(row, column)
+            widget.hide()
+            widget.setParent(None)
+            try:
+                if shiboken6.isValid(widget):
+                    shiboken6.delete(widget)
+            except RuntimeError:
+                pass  # C++ object already gone
 
 
 class StatusBadge(QLabel):
@@ -111,10 +159,7 @@ class StatusBadge(QLabel):
             "not_in": "Not In",
         }.get(status, status.replace("_", " ").title())
         self.setText(label)
-        self.setStyleSheet(
-            f"color: {color}; background: {color}1A; border: 1px solid {color}55;"
-            f"border-radius: 10px; padding: 2px 9px; font-size: 11px; font-weight: 700;"
-        )
+        self.setStyleSheet(badge_stylesheet(color))
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
 
 
@@ -130,10 +175,7 @@ class ActiveBadge(QLabel):
         color = theme.SUCCESS if active else theme.TEXT_MUTED
         label = "Active" if active else "Inactive"
         self.setText(label)
-        self.setStyleSheet(
-            f"color: {color}; background: {color}1A; border: 1px solid {color}55;"
-            f"border-radius: 10px; padding: 2px 9px; font-size: 11px; font-weight: 700;"
-        )
+        self.setStyleSheet(badge_stylesheet(color))
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
 
 

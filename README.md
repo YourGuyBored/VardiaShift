@@ -13,6 +13,8 @@ Download it, open it, scan QR codes, track hours.
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+![Shiftora dashboard](assets/screenshots/dashboard.png)
+
 </div>
 
 ---
@@ -190,6 +192,8 @@ Today's Work Time
 Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 `Duplicate Scan Ignored`, ...).
 
+![Attendance kiosk](assets/screenshots/kiosk.png)
+
 ### Scanning hardware
 
 * **Webcam** - the kiosk decodes the camera feed directly (needs the optional
@@ -208,6 +212,8 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 **Dashboard** - who is working right now, who timed out, who is missing a
 time-out, today's hours, this week's hours vs the organisation goal, and a
 live per-employee table with search and status filters.
+
+![Employee management](assets/screenshots/employees.png)
 
 **Employee details** - pick an employee to see weekly progress
 (`24h 35m / 30h`, remaining, overtime, progress bar), a day-by-day breakdown,
@@ -251,7 +257,7 @@ Optional extras:
 pip install -r requirements-optional.txt   # webcam scanning (opencv)
 ```
 
-Run the test suite (295 tests: services, QR, reports, backup, GUI):
+Run the test suite (303 tests: services, QR, reports, backup, GUI):
 
 ```bash
 python -m pytest tests/ -q
