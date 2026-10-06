@@ -8,10 +8,12 @@ No servers. No cloud. No Python required to use it.
 
 Download it, open it, scan QR codes, track hours.
 
-[![tests](https://github.com/YOUR-USERNAME/shiftora/actions/workflows/tests.yml/badge.svg)](https://github.com/YOUR-USERNAME/shiftora/actions/workflows/tests.yml)
+[![tests](https://github.com/YourGuyBored/Shiftora/actions/workflows/tests.yml/badge.svg)](https://github.com/YourGuyBored/Shiftora/actions/workflows/tests.yml)
+[![release](https://img.shields.io/badge/release-download%20%E2%86%93-blue)](https://github.com/YourGuyBored/Shiftora/releases/latest)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-469%20passing-brightgreen)
 
 ![Shiftora dashboard](assets/screenshots/dashboard.png)
 
@@ -38,19 +40,48 @@ manages itself. There is nothing to install, configure, or host.
 
 You do **not** need Python or any technical setup.
 
-**Windows (easiest):** download **`Shiftora-Setup-Windows-x64.exe`** from the
-repository's **Releases** page, run it, and follow the installer. It adds a
-Start Menu entry, an optional desktop shortcut, and an uninstaller.
+### Windows - the installer (recommended)
 
-**Portable (no install):** download **`Shiftora-Windows-x64.zip`** (Windows)
-or **`Shiftora-Linux-x64.tar.gz`** (Linux), extract it anywhere, and open
-**`Shiftora.exe`** (Windows) or **`Shiftora`** (Linux).
+1. Go to **[github.com/YourGuyBored/Shiftora/releases/latest](https://github.com/YourGuyBored/Shiftora/releases/latest)**.
+   That page always shows the newest version, so a bookmarked link keeps
+   working after future releases.
+2. Download **`Shiftora-Setup-Windows-x64.exe`**.
+3. Double-click it and follow the installer.
 
-**From source (developers and troubleshooting):** install Python 3.10+,
-download the source ZIP from GitHub, extract it, and double-click
-**`setup_windows.bat`**. It installs everything automatically and puts a
-Shiftora shortcut on your desktop. (On Linux/macOS: `pip install -r
-requirements.txt`, then `python run.py`.)
+The installer adds a Start Menu entry, offers a desktop shortcut
+(tick the box on step 3), and includes a proper uninstaller under
+**Settings → Apps → Installed apps**. The app itself is a single folder, so
+removing it never touches your attendance data.
+
+> **Windows may show a blue "Windows protected your PC" screen.** Shiftora is
+> not code-signed, which costs a few dollars a year and requires a real
+> business address. Choose **More info → Run anyway**. The app is open source
+> and you can read every line of it in this repository.
+
+### Portable builds (no installer)
+
+On the same releases page you will also find:
+
+| File | Use it on | How to run |
+|---|---|---|
+| `Shiftora-Windows-x64.zip` | Windows | Extract, then double-click **`Shiftora.exe`** |
+| `Shiftora-Linux-x64.tar.gz` | Linux | Extract, then run **`Shiftora`** |
+
+Nothing is written into the folder you extract to, so you can delete it to
+"uninstall".
+
+### From source (developers, or if a build will not run)
+
+Download **Source code (zip)** from the code menu on the GitHub page, extract
+it, then on Windows double-click **`setup_windows.bat`** - it creates the
+virtual environment, installs everything, and puts a desktop shortcut in
+place. On Linux or macOS:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
+```
 
 In every case the app starts and creates its own data folder automatically.
 
@@ -111,11 +142,10 @@ Open **Employees** → **Add Employee** and fill in:
 
 The **custom code** is a human-typable identifier (badge number, short code,
 nickname - no length limit, almost anything goes except control characters).
-Employees can type it
-instead of scanning when a reader is unavailable, it is searchable, and it is
-printed on their QR card. It never replaces the secure QR token inside the
-code itself, which stays a fixed random value so old printouts keep working
-exactly as before.
+Employees can type it instead of scanning when a reader is unavailable, it is
+searchable, and it is printed on their QR card. It never replaces the secure
+QR token inside the code itself, which stays a fixed random value so old
+printouts keep working exactly as before.
 
 Employees are listed with their status (**Active** / **Inactive**), date added
 and weekly goal. You can **edit**, **deactivate/reactivate**, and search them.
@@ -155,8 +185,8 @@ Employee QR  +  TIME OUT QR  =  Time Out recorded
 
 ## Employee usage (the kiosk)
 
-Open the **Attendance Kiosk** from the sidebar (or press the kiosk button).
-It is a deliberately simple full-screen screen with a live clock:
+Open the **Attendance Kiosk** from the sidebar. It is a deliberately simple
+screen with a live clock:
 
 ```text
 ================================
@@ -172,6 +202,13 @@ It is a deliberately simple full-screen screen with a live clock:
 
 ================================
 ```
+
+The kiosk fills the screen by default so it reads well from a distance. It
+stays a normal window you can drag, resize and minimize, and **F11** toggles
+fullscreen either way. If you would rather it always open as a movable
+window, turn off *Kiosk fullscreen* in Settings → Attendance Kiosk - the
+setting is honoured, and the window keeps its size and position between
+sessions.
 
 Leaving the kiosk requires the administrator password (Exit kiosk button
 or the window close button) - employees cannot reach the admin screens from
@@ -344,12 +381,17 @@ The key file is validated before it is stored, lives only in your local data
 folder, and is never logged. Uploads reuse the same formula-safe cell
 handling as the CSV/XLSX exports.
 
+> **Treat that JSON key like a password.** Anyone holding it can edit any
+> spreadsheet it has been shared with. Keep it out of version control
+> (`.gitignore` already blocks it) and delete your downloaded copy once
+> Shiftora has imported it - you can always issue a new key from Cloud.
+
 ---
 
 ## Developer installation
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/shiftora.git
+git clone https://github.com/YourGuyBored/Shiftora.git
 cd shiftora
 python -m venv .venv
 # Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
