@@ -35,6 +35,22 @@ class ReportRow:
     values: list = field(default_factory=list)
 
 
+def sanitize_spreadsheet_cell(value) -> object:
+    """Neutralise spreadsheet formula injection in exported text.
+
+    Spreadsheet apps evaluate cells starting with ``=``, ``+``, ``-`` or
+    ``@`` as formulas, so an employee name like ``=1+1`` (or a malicious
+    ``=HYPERLINK(...)``) would execute on open. Prefixing such values with a
+    single quote keeps them inert while displaying identically. Numbers and
+    other values pass through untouched.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 @dataclass
 class ReportResult:
     title: str
@@ -67,7 +83,7 @@ class ReportService:
         now = clock.now()
         now_iso = TimeUtils.to_iso(now)
 
-        headers = ["Employee ID", "Full Name", "Department", "Time In", "Time Out", "Hours", "Status"]
+        headers = ["Employee ID", "Full Name", "Department", "Time In", "Time Out", "Hours", "Status", "Source"]
         rows: list[list] = []
         totals_minutes = 0
         working = closed = missing = 0
@@ -94,6 +110,7 @@ class ReportService:
                     clock.format_time(record.time_out),
                     clock.format_duration(minutes),
                     record.status_label,
+                    self.attendance.source_label(record.source),
                 ]
             )
 
@@ -110,6 +127,7 @@ class ReportService:
                             "-",
                             "0h 00m",
                             AttendanceStatus.label(AttendanceStatus.NOT_IN),
+                            "-",
                         ]
                     )
 
@@ -127,7 +145,7 @@ class ReportService:
             headers=headers,
             rows=rows,
             summary=summary,
-            totals=["TOTAL", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)"],
+            totals=["TOTAL", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)", ""],
         )
 
     # -- weekly --------------------------------------------------------------
@@ -229,7 +247,7 @@ class ReportService:
         end = window.end.strftime("%Y-%m-%d")
         now_iso = TimeUtils.to_iso(clock.now())
 
-        headers = ["Date", "Employee ID", "Full Name", "Time In", "Time Out", "Hours", "Status"]
+        headers = ["Date", "Employee ID", "Full Name", "Time In", "Time Out", "Hours", "Status", "Source"]
         records = self.repos.attendance.list_for_range(start, end, employee_id)
         records.sort(key=lambda r: (r.work_date, r.full_name))
 
@@ -251,6 +269,7 @@ class ReportService:
                     clock.format_time(record.time_out),
                     clock.format_duration(minutes),
                     record.status_label,
+                    self.attendance.source_label(record.source),
                 ]
             )
 
@@ -279,7 +298,7 @@ class ReportService:
             headers=headers,
             rows=rows,
             summary=summary_lines,
-            totals=["TOTAL", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)"],
+            totals=["TOTAL", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)", ""],
         )
 
     # -- custom range --------------------------------------------------------
@@ -290,7 +309,7 @@ class ReportService:
         records = self.repos.attendance.list_for_range(
             start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), employee_id
         )
-        headers = ["Date", "Employee ID", "Full Name", "Department", "Time In", "Time Out", "Hours", "Status"]
+        headers = ["Date", "Employee ID", "Full Name", "Department", "Time In", "Time Out", "Hours", "Status", "Source"]
         rows: list[list] = []
         totals_minutes = 0
         for record in records:
@@ -310,6 +329,7 @@ class ReportService:
                     clock.format_time(record.time_out),
                     clock.format_duration(minutes),
                     record.status_label,
+                    self.attendance.source_label(record.source),
                 ]
             )
         days = len(clock.date_range(start, end))
@@ -326,7 +346,7 @@ class ReportService:
                 ("Records", str(len(records))),
                 ("Total hours", clock.format_duration(totals_minutes)),
             ],
-            totals=["TOTAL", "", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)"],
+            totals=["TOTAL", "", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)", ""],
         )
 
     # -- employee sheet ------------------------------------------------------
@@ -352,7 +372,7 @@ class ReportService:
                     clock.format_time(record.time_out),
                     clock.format_duration(minutes),
                     record.status_label,
-                    "Manual" if record.note.startswith("Added") else "QR",
+                    self.attendance.source_label(record.source),
                 ]
             )
         return ReportResult(
@@ -407,36 +427,33 @@ class ReportService:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle)
-            writer.writerow([report.title])
-            writer.writerow([report.subtitle])
-            writer.writerow([])
-            for label, value in report.summary:
-                writer.writerow([label, value])
-            writer.writerow([])
-            writer.writerow(report.headers)
-            for row in report.rows:
+            for row in self._csv_rows(report):
                 writer.writerow(row)
-            if report.totals:
-                writer.writerow([])
-                writer.writerow(report.totals)
         return path
 
     def csv_bytes(self, report: ReportResult) -> bytes:
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow([report.title])
-        writer.writerow([report.subtitle])
-        writer.writerow([])
-        for label, value in report.summary:
-            writer.writerow([label, value])
-        writer.writerow([])
-        writer.writerow(report.headers)
-        for row in report.rows:
+        for row in self._csv_rows(report):
             writer.writerow(row)
-        if report.totals:
-            writer.writerow([])
-            writer.writerow(report.totals)
         return buffer.getvalue().encode("utf-8-sig")
+
+    def _csv_rows(self, report: ReportResult) -> list[list]:
+        rows = [
+            [report.title],
+            [report.subtitle],
+            [],
+        ]
+        for label, value in report.summary:
+            rows.append([label, sanitize_spreadsheet_cell(value)])
+        rows.append([])
+        rows.append([sanitize_spreadsheet_cell(cell) for cell in report.headers])
+        for row in report.rows:
+            rows.append([sanitize_spreadsheet_cell(cell) for cell in row])
+        if report.totals:
+            rows.append([])
+            rows.append([sanitize_spreadsheet_cell(cell) for cell in report.totals])
+        return rows
 
     def write_xlsx(self, report: ReportResult, destination: Path | str) -> Path:
         if not XLSX_AVAILABLE:
@@ -461,7 +478,9 @@ class ReportService:
         row_index = 4
         for label, value in report.summary:
             sheet.cell(row=row_index, column=1, value=label).font = Font(bold=True)
-            sheet.cell(row=row_index, column=2, value=value)
+            sheet.cell(
+                row=row_index, column=2, value=sanitize_spreadsheet_cell(value)
+            )
             row_index += 1
         row_index += 1
 
@@ -475,13 +494,21 @@ class ReportService:
 
         for offset, row in enumerate(report.rows, start=1):
             for column, value in enumerate(row, start=1):
-                cell = sheet.cell(row=header_row + offset, column=column, value=value)
+                cell = sheet.cell(
+                    row=header_row + offset,
+                    column=column,
+                    value=sanitize_spreadsheet_cell(value),
+                )
                 cell.border = border
 
         if report.totals:
             total_row = header_row + len(report.rows) + 2
             for column, value in enumerate(report.totals, start=1):
-                cell = sheet.cell(row=total_row, column=column, value=value)
+                cell = sheet.cell(
+                    row=total_row,
+                    column=column,
+                    value=sanitize_spreadsheet_cell(value),
+                )
                 cell.font = Font(bold=True)
                 cell.border = border
 

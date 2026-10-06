@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from app.services.authentication_service import AuthenticationError
 from app.ui import theme
 from app.ui.widgets import ActiveBadge, Card, PrimaryButton
+from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password
 
 ADMIN_COLUMNS = ["Username", "Full name", "Last sign-in", "Status"]
@@ -37,7 +38,7 @@ class PasswordDialog(QDialog):
         self.context = context
         self.admin = admin
         self.setWindowTitle("Change password")
-        self.setMinimumWidth(460)
+        fit_to_screen(self, (460, 0))
 
         self._current = QLineEdit()
         self._current.setEchoMode(QLineEdit.EchoMode.Password)

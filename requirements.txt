@@ -7,3 +7,10 @@ PySide6>=6.6
 qrcode[pil]>=7.4
 Pillow>=10.0
 openpyxl>=3.1
+# Windows ships no IANA time-zone database, so zoneinfo needs this package
+# there. It is a no-op everywhere else.
+tzdata; platform_system == "Windows"
+# Google Sheets export. Bundled so the feature works out of the box,
+# including in the packaged app; uploads still need internet + a key file.
+google-api-python-client>=2.0
+google-auth>=2.0

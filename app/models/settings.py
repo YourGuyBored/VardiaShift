@@ -22,6 +22,8 @@ GROUP_GENERAL = "General"
 GROUP_WORK = "Work Hours"
 GROUP_ATTENDANCE = "Attendance"
 GROUP_KIOSK = "Attendance Kiosk"
+GROUP_PHONE = "Phone Attendance"
+GROUP_SHEETS = "Google Sheets"
 GROUP_SECURITY = "Security"
 
 TYPE_TEXT = "text"
@@ -184,6 +186,11 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "When enabled the kiosk only accepts the employee QR followed by the "
         "Time-In / Time-Out QR.",
     ),
+    SettingSpec(
+        "auto_clock_mode", "Single-scan clocking", TYPE_BOOL, False, GROUP_ATTENDANCE,
+        "When enabled, one employee scan is enough: Shiftora records time-in "
+        "when the employee is not working, and time-out when they are.",
+    ),
     # -- Kiosk ---------------------------------------------------------------
     SettingSpec(
         "kiosk_fullscreen", "Kiosk fullscreen", TYPE_BOOL, False, GROUP_KIOSK,
@@ -206,6 +213,36 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         maximum=300,
         suffix="sec",
     ),
+    # -- Phone attendance (local network) ------------------------------------
+    SettingSpec(
+        "phone_enabled", "Enable phone attendance", TYPE_BOOL, False, GROUP_PHONE,
+        "Allow employees to clock in from their phone browser over the local "
+        "network. No internet, UPnP, or cloud relay involved.",
+    ),
+    SettingSpec(
+        "phone_port", "Phone service port", TYPE_INT, 8123, GROUP_PHONE,
+        "Port the local phone service listens on. Use 1024-65535.",
+        minimum=1024,
+        maximum=65535,
+    ),
+    SettingSpec(
+        "phone_auto_start", "Start phone service with the app", TYPE_BOOL, False,
+        GROUP_PHONE,
+        "Start listening automatically when Shiftora opens (only if phone "
+        "attendance is enabled).",
+    ),
+    # -- Google Sheets export (optional integration) -------------------------
+    SettingSpec(
+        "sheets_enabled", "Enable Google Sheets export", TYPE_BOOL, False, GROUP_SHEETS,
+        "Show the 'Send to Google Sheets' button on the Reports page. Needs "
+        "the optional sheets packages and a service-account key file.",
+    ),
+    SettingSpec(
+        "sheets_spreadsheet_id", "Spreadsheet ID", TYPE_TEXT, "", GROUP_SHEETS,
+        "The long ID from the Google Sheet URL (the part between /d/ and "
+        "/edit). The sheet must be shared with the service account email.",
+        max_length=120,
+    ),
     # -- Security ------------------------------------------------------------
     SettingSpec(
         "auto_logout_minutes", "Auto sign-out (minutes)", TYPE_INT, 30, GROUP_SECURITY,
@@ -224,7 +261,15 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
 )
 
 SPEC_BY_KEY: dict[str, SettingSpec] = {spec.key: spec for spec in SETTING_SPECS}
-GROUPS: tuple[str, ...] = (GROUP_GENERAL, GROUP_WORK, GROUP_ATTENDANCE, GROUP_KIOSK, GROUP_SECURITY)
+GROUPS: tuple[str, ...] = (
+    GROUP_GENERAL,
+    GROUP_WORK,
+    GROUP_ATTENDANCE,
+    GROUP_KIOSK,
+    GROUP_PHONE,
+    GROUP_SHEETS,
+    GROUP_SECURITY,
+)
 
 
 @dataclass
@@ -349,6 +394,33 @@ class AppSettings:
     @property
     def require_employee_qr(self) -> bool:
         return bool(self.get("require_employee_qr"))
+
+    @property
+    def auto_clock_mode(self) -> bool:
+        return bool(self.get("auto_clock_mode"))
+
+    @property
+    def phone_enabled(self) -> bool:
+        return bool(self.get("phone_enabled"))
+
+    @property
+    def phone_port(self) -> int:
+        try:
+            return int(self.get("phone_port"))
+        except (TypeError, ValueError):
+            return 8123
+
+    @property
+    def phone_auto_start(self) -> bool:
+        return bool(self.get("phone_auto_start"))
+
+    @property
+    def sheets_enabled(self) -> bool:
+        return bool(self.get("sheets_enabled"))
+
+    @property
+    def sheets_spreadsheet_id(self) -> str:
+        return str(self.get("sheets_spreadsheet_id") or "").strip()
 
     @property
     def kiosk_fullscreen(self) -> bool:

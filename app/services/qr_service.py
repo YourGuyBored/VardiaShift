@@ -170,12 +170,55 @@ class QRCodeManager:
 
     def render_employee_card(self, employee: Employee) -> "object":
         payload = self.payload_for_employee(employee)
+        code_line = employee.employee_code
+        if employee.badge_code:
+            code_line += f"  •  {employee.badge_code}"
         return build_employee_card(
             payload,
             self.settings.settings.organization_name,
             employee.full_name,
-            employee.employee_code,
+            code_line,
         )
+
+    def phone_checkin_url(self, employee: Employee) -> str:
+        """Personal clock-in/clock-out URL for the employee's phone browser.
+
+        The page offers both a Time in and a Time out button. The URL carries
+        the same revocable token as the employee QR - no names, IDs or other
+        personal data. Regenerating the employee QR invalidates old check-in
+        links too.
+
+        Scanning this URL with a phone camera opens it directly in the
+        browser, because the QR holds a full ``http://`` address rather than
+        a Shiftora token.
+        """
+        from app.phone.server import CHECKIN_PATH_PREFIX, phone_url_for_phone
+
+        token = employee.qr_token
+        if not token:
+            raise ValueError(
+                f"{employee.full_name} has no QR token. Regenerate it and try again."
+            )
+        base = phone_url_for_phone(self.settings.settings).rstrip("/")
+        return f"{base}{CHECKIN_PATH_PREFIX}{token}"
+
+    def render_phone_qr(self, employee: Employee, destination=None):
+        """QR image encoding the employee's phone check-in URL."""
+        from app.qr.generator import QRCardSpec, make_card
+
+        url = self.phone_checkin_url(employee)
+        card = make_card(
+            url,
+            QRCardSpec(
+                title="PHONE CLOCK-IN / OUT",
+                subtitle=f"{employee.full_name} - tap Time in or Time out",
+                footer=self.settings.settings.organization_name,
+                accent="#0EA5E9",
+            ),
+        )
+        if destination is None:
+            destination = self.qr_dir() / f"phone_{self._safe(employee.employee_code)}.png"
+        return save_image(card, destination)
 
     @staticmethod
     def _safe(value: str) -> str:

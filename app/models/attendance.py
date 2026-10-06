@@ -39,6 +39,7 @@ class AttendanceRecord:
     time_out: str | None = None
     duration_minutes: int | None = None
     status: str = ATTENDANCE_OPEN
+    source: str = "qr"
     is_corrected: bool = False
     note: str = ""
     created_at: str = ""
@@ -99,6 +100,7 @@ class AttendanceRecord:
             time_out=row["time_out"],
             duration_minutes=row["duration_minutes"],
             status=row["status"],
+            source=row["source"] if "source" in keys and row["source"] else "qr",
             is_corrected=bool(row["is_corrected"]) if "is_corrected" in keys else False,
             note=row["note"] or "",
             created_at=row["created_at"] or "",
@@ -240,6 +242,7 @@ class EmployeeToday:
     time_in: datetime | None = None
     time_out: datetime | None = None
     missing: bool = False
+    source: str = ""
 
     @property
     def status_label(self) -> str:

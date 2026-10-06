@@ -35,7 +35,14 @@ def _qt_ordered_teardown():
             for _ in range(3):  # flush queued deleteLater() events
                 for widget in app.topLevelWidgets():
                     try:
-                        widget.close()
+                        # Kiosk windows gate close() behind a modal password
+                        # dialog; force_close() is the shutdown path and must
+                        # never block the test session.
+                        closer = getattr(widget, "force_close", None)
+                        if callable(closer):
+                            closer()
+                        else:
+                            widget.close()
                         widget.deleteLater()
                     except RuntimeError:
                         pass  # C++ object already gone
@@ -63,6 +70,24 @@ def isolated_data_dir(tmp_path, monkeypatch):
     paths_module._cache = None
     yield data_dir
     paths_module._cache = None
+
+
+@pytest.fixture(scope="session")
+def qt_app():
+    """The one QApplication for the whole session.
+
+    Defined here (not per test-module) so any test that touches widgets can
+    ask for it without repeating the fixture.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    from app.ui.theme import apply_theme
+
+    apply_theme(app)
+    return app
 
 
 @pytest.fixture

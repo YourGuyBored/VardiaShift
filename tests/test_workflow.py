@@ -102,7 +102,7 @@ def test_public_action_code_alone_creates_no_record(flow, frozen):
     window.handle_scan(flow["time_in"])
     assert "NOT AN EMPLOYEE CODE" in window._prompt.text()
     assert context.repositories.attendance.list_for_range("2000-01-01", "2099-12-31") == []
-    window.close()
+    window.force_close()
     app.processEvents()
 
 
@@ -347,7 +347,7 @@ def test_kiosk_full_scan_flow(context, admin, frozen):
     assert "8h 00m" in window._result_details.text()
     assert "This week" in window._result_details.text()
 
-    window.close()
+    window.force_close()
     app.processEvents()
 
 
@@ -364,7 +364,7 @@ def test_kiosk_rejects_action_code_first(context, admin):
     window.handle_scan(time_in_payload)
     assert "NOT AN EMPLOYEE CODE" in window._prompt.text()
     assert context.repositories.attendance.list_for_range("2000-01-01", "2099-12-31") == []
-    window.close()
+    window.force_close()
     app.processEvents()
 
 
@@ -391,7 +391,7 @@ def test_kiosk_duplicate_time_in_message(context, admin, frozen):
     assert window._result_title.text() == "Already Timed In"
     assert "10:00 AM" in window._result_details.text()
     assert "already clocked in" in window._result_details.text()
-    window.close()
+    window.force_close()
     app.processEvents()
 
 
@@ -411,7 +411,7 @@ def test_kiosk_clock_uses_injected_time(context, admin, frozen):
     window.handle_scan(time_in_payload)
     record = context.attendance.record_for_today(juan)
     assert record.time_in.startswith(frozen.reference.date().isoformat())
-    window.close()
+    window.force_close()
     app.processEvents()
 
 def test_kiosk_duplicate_scan_is_ignored(context, admin, frozen):
@@ -435,5 +435,5 @@ def test_kiosk_duplicate_scan_is_ignored(context, admin, frozen):
     assert window._result_title.text() == "Duplicate Scan Ignored"
     records = context.repositories.attendance.list_for_range("2000-01-01", "2099-12-31")
     assert len(records) == 1
-    window.close()
+    window.force_close()
     app.processEvents()

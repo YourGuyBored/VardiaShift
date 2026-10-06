@@ -29,7 +29,7 @@ from app.ui.widgets import (
     clear_table_widgets,
 )
 
-COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Today", "This Week", "Goal"]
+COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Today", "This Week", "Goal", "Source"]
 
 
 class DashboardPage(QWidget):
@@ -273,6 +273,8 @@ class DashboardPage(QWidget):
                 self._table.setItem(index, column, item)
 
             badge = StatusBadge(row.status)
+            if row.status == ATTENDANCE_MISSING:
+                badge.setToolTip("No time-out was scanned for this session.")
             holder = QWidget()
             badge_layout = QHBoxLayout(holder)
             badge_layout.setContentsMargins(4, 2, 4, 2)
@@ -280,18 +282,22 @@ class DashboardPage(QWidget):
             badge_layout.addStretch(1)
             self._table.setCellWidget(index, 3, holder)
 
+            source_text = (
+                self.context.attendance.source_label(row.source)
+                if row.source
+                else "-"
+            )
             for column, value in (
                 (4, clock.format_time(row.time_in) if row.time_in else "-"),
                 (5, clock.format_time(row.time_out) if row.time_out else "-"),
                 (6, row.today_text),
                 (7, row.week_text),
                 (8, row.goal_text),
+                (9, source_text),
             ):
                 cell = QTableWidgetItem(value)
                 if column in (6, 7, 8):
                     cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if row.status == ATTENDANCE_MISSING and column == 3:
-                    cell.setToolTip("No time-out was scanned for this session.")
                 self._table.setItem(index, column, cell)
 
         self._table.setVisible(bool(rows))

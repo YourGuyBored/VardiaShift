@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from app.constants import APP_NAME, APP_TAGLINE
 from app.ui import theme
 from app.ui.widgets import PrimaryButton
+from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password, validate_username
 
 STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"]
@@ -36,7 +37,8 @@ class SetupWindow(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} - First-time setup")
-        self.setMinimumSize(560, 660)
+        # Clamped to the screen so a short laptop window can still be moved.
+        fit_to_screen(self, (560, 660))
         self._username = QLineEdit()
         self._full_name = QLineEdit()
         self._password = QLineEdit()

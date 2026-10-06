@@ -15,17 +15,6 @@ from app.constants import QR_TIME_IN, QR_TIME_OUT  # noqa: E402
 from app.qr.tokens import build_payload  # noqa: E402
 
 
-@pytest.fixture(scope="session")
-def qt_app():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    from app.ui.theme import apply_theme
-
-    apply_theme(app)
-    return app
-
-
 @pytest.fixture(autouse=True)
 def no_blocking_dialogs(monkeypatch):
     """Make every system dialog non-modal so a stray message box cannot hang CI."""
@@ -67,6 +56,13 @@ def no_blocking_dialogs(monkeypatch):
             True,
         )),
     )
+    # The kiosk password gate is modal by design; tests drive it through
+    # _try_unlock() or _exit_allowed and must never block on exec().
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.attendance_kiosk import KioskExitDialog
+
+    monkeypatch.setattr(KioskExitDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
 
 
 @pytest.fixture
@@ -273,6 +269,12 @@ def test_attendance_page_today_and_history(context, qt_app, team, frozen):
     page._today_date.setDate(QDate(day.year, day.month, day.day))
     page._tabs.setCurrentIndex(0)
     assert page._today_table.rowCount() == 2
+    assert page._today_table.columnCount() == 7
+    assert page._today_table.item(0, 6) is not None
+    assert page._today_table.item(0, 6).text() in ("Desktop", "Phone", "Admin correction", "Manual")
+    # Last week is guaranteed empty for fresh fixtures regardless of which
+    # weekday today is (the auto-selected employee's records are this week).
+    page._range_box.setCurrentIndex(2)  # Last week
     assert page._history_table.rowCount() == 0
 
     page._tabs.setCurrentIndex(1)
@@ -358,6 +360,14 @@ def test_attendance_missing_timeouts_tab_lists_open_sessions(context, qt_app, te
     page.refresh()
     page._tabs.setCurrentIndex(2)
     assert page._open_table.rowCount() == 1   # Maria is still clocked in
+    assert page._open_table.columnCount() == 5
+    assert page._open_table.horizontalHeaderItem(0).text() == "Employee"
+    assert page._open_table.horizontalHeaderItem(1).text() == "Date"
+    assert page._open_table.horizontalHeaderItem(2).text() == "Time In"
+    assert page._open_table.horizontalHeaderItem(3).text() == "Elapsed"
+    assert page._open_table.horizontalHeaderItem(4).text() == "Status"
+    assert "Maria" in page._open_table.item(0, 0).text()
+    assert page._open_table.item(0, 3) is not None
 
 
 def test_audit_tab_lists_entries(context, qt_app, team):
@@ -764,8 +774,9 @@ def test_kiosk_close_is_not_reentrant(context, qt_app, admin_session, team):
         window.open_kiosk()
         qt_app.processEvents()
         assert window._kiosk is not None
-        # Simulate what happens when the user presses "Exit kiosk": the close
+        # Simulate what happens after the password gate passes: the close
         # event emits `finished`, and the shell also runs its cleanup.
+        window._kiosk._exit_allowed = True
         window._kiosk.close()
         window._on_kiosk_finished()
         qt_app.processEvents()
@@ -880,3 +891,438 @@ def test_stat_tile_caption_wraps_instead_of_clipping(context, qt_app):
     tile = StatTile("Currently Working", "12")
     assert tile._value.text() == "12"
     assert tile.value_text() == "12"
+
+
+# -- kiosk exit gate ---------------------------------------------------------
+def test_kiosk_close_is_gated_by_password(context, qt_app, admin_session, team):
+    """Closing the kiosk without the password must leave it open."""
+    from app.ui.attendance_kiosk import KioskWindow
+
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    gate_calls: list = []
+    window._request_exit = lambda: gate_calls.append(True)  # avoid modal dialog
+    window.close()
+    qt_app.processEvents()
+
+    assert gate_calls == [True]
+    assert window.isVisible(), "kiosk must stay open until the password gate passes"
+    window.force_close()
+    qt_app.processEvents()
+
+
+def test_kiosk_exit_dialog_accepts_correct_password(context, qt_app, admin_session):
+    from app.ui.attendance_kiosk import KioskExitDialog
+
+    dialog = KioskExitDialog(context)
+    accepted: list = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog._password.setText("Sup3rSecret!")
+    dialog._try_unlock()
+    assert accepted == [True]
+    assert dialog._error.isHidden()
+
+
+def test_kiosk_exit_dialog_rejects_wrong_password(context, qt_app, admin_session):
+    from app.ui.attendance_kiosk import KioskExitDialog
+
+    dialog = KioskExitDialog(context)
+    accepted: list = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog._password.setText("WrongPass1!")
+    dialog._try_unlock()
+    assert accepted == []
+    assert not dialog._error.isHidden()
+    assert "Incorrect" in dialog._error.text()
+
+
+def test_kiosk_exit_lockout_after_repeated_failures(context, qt_app, admin_session):
+    from app.ui.attendance_kiosk import KioskExitDialog
+
+    for _ in range(5):
+        dialog = KioskExitDialog(context)
+        dialog._password.setText("WrongPass1!")
+        dialog._try_unlock()
+    dialog = KioskExitDialog(context)
+    dialog._password.setText("Sup3rSecret!")
+    dialog._try_unlock()
+    assert "Too many" in dialog._error.text() or "again in" in dialog._error.text()
+
+
+def test_kiosk_repeated_enter_exit_cycles(context, qt_app, admin_session, team):
+    """Three full cycles: open, gate-accepted close, back to main window."""
+    from app.main import build_pages
+    from app.ui.main_window import MainWindow
+
+    window = MainWindow(context)
+    build_pages(window, context)
+    try:
+        for _ in range(3):
+            window.open_kiosk()
+            qt_app.processEvents()
+            assert window._kiosk is not None
+            # Simulate a passed password gate, then the guarded close.
+            window._kiosk._exit_allowed = True
+            window._kiosk.close()
+            qt_app.processEvents()
+            assert window._kiosk is None
+            assert window.isVisible()
+    finally:
+        window.close()
+
+
+def test_main_window_close_drops_kiosk_without_gate(
+    context, qt_app, admin_session, team, monkeypatch
+):
+    """Quitting the app must never trap anyone behind the password gate."""
+    from app.main import build_pages
+    from app.ui.main_window import MainWindow
+
+    window = MainWindow(context)
+    build_pages(window, context)
+    window.open_kiosk()
+    qt_app.processEvents()
+
+    def fail_if_gated() -> None:
+        raise AssertionError("password gate must not appear during shutdown")
+
+    monkeypatch.setattr(window._kiosk, "_request_exit", fail_if_gated)
+    window.close()
+    qt_app.processEvents()
+    assert window._kiosk is None
+
+
+# -- camera recovery ---------------------------------------------------------
+def test_camera_reports_failure_after_repeated_bad_frames(qt_app):
+    from app.qr.scanner import CameraScanner
+
+    class DeadCapture:
+        def read(self):
+            return False, None
+
+        def release(self):
+            pass
+
+    scanner = CameraScanner()
+    errors: list = []
+    scanner.camera_error.connect(errors.append)
+    scanner._capture = DeadCapture()
+    scanner._timer.start()
+    try:
+        for _ in range(CameraScanner.FAILURE_THRESHOLD + 2):
+            scanner._grab()
+        assert len(errors) == 1
+        assert "stopped" in errors[0].lower()
+        assert scanner.running is False
+    finally:
+        scanner.stop()
+
+
+def test_camera_error_rearms_on_restart(qt_app):
+    """A fresh start clears the latch, so each outage reports exactly once."""
+    from app.qr.scanner import CameraScanner
+
+    class DeadCapture:
+        def read(self):
+            return False, None
+
+        def release(self):
+            pass
+
+    scanner = CameraScanner()
+    errors: list = []
+    scanner.camera_error.connect(errors.append)
+    scanner._capture = DeadCapture()
+    for _ in range(CameraScanner.FAILURE_THRESHOLD):
+        scanner._grab()
+    assert len(errors) == 1
+    # start() resets the latch; simulate that reset directly since there is
+    # no real camera in the test environment.
+    scanner._error_reported = False
+    scanner._failures = 0
+    scanner._capture = DeadCapture()
+    for _ in range(CameraScanner.FAILURE_THRESHOLD):
+        scanner._grab()
+    assert len(errors) == 2
+    scanner.stop()
+
+
+def test_kiosk_recovers_to_wedge_after_camera_loss(
+    context, qt_app, admin_session, team
+):
+    from app.ui.attendance_kiosk import KioskWindow
+
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+    window._on_camera_error("The camera stopped sending frames.")
+    assert "Retry camera" in window._camera_button.text()
+    assert "USB scanner" in window._camera_hint.text()
+    # The kiosk is still usable: wedge/manual paths are untouched.
+    assert window._state == "idle"
+    assert window.isVisible()
+    window.force_close()
+    qt_app.processEvents()
+
+
+# -- automatic single-scan mode ----------------------------------------------
+def test_kiosk_auto_mode_times_in_with_one_scan(context, qt_app, admin_session, frozen):
+    from app.ui.attendance_kiosk import KioskWindow
+    from app.qr.tokens import build_payload
+
+    context.settings.set("auto_clock_mode", True, "admin")
+    juan = context.employees.create("EMP-001", "Juan Dela Cruz", admin_username="admin")
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    window.handle_scan(build_payload("employee", juan.qr_token))
+    assert window._result_title.text() == "TIME IN SUCCESSFUL"
+    assert window._result_name.text() == "Juan Dela Cruz"
+    assert context.attendance.record_for_today(juan).status == "open"
+    window.force_close()
+    qt_app.processEvents()
+
+
+def test_kiosk_auto_mode_times_out_with_one_scan(context, qt_app, admin_session, frozen):
+    from app.ui.attendance_kiosk import KioskWindow
+    from app.qr.tokens import build_payload
+
+    context.settings.set("auto_clock_mode", True, "admin")
+    context.settings.set("duplicate_scan_window_seconds", 0, "admin")
+    juan = context.employees.create("EMP-001", "Juan Dela Cruz", admin_username="admin")
+    context.attendance.time_in(juan, frozen.at(9, 0))
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    window.handle_scan(build_payload("employee", juan.qr_token))
+    assert window._result_title.text() == "TIME OUT SUCCESSFUL"
+    assert context.attendance.record_for_today(juan).status == "closed"
+    window.force_close()
+    qt_app.processEvents()
+
+
+def test_two_step_mode_unchanged_when_auto_mode_off(
+    context, qt_app, admin_session, frozen
+):
+    from app.ui.attendance_kiosk import KioskWindow
+    from app.qr.tokens import build_payload
+
+    assert context.settings.settings.auto_clock_mode is False
+    juan = context.employees.create("EMP-001", "Juan Dela Cruz", admin_username="admin")
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    window.handle_scan(build_payload("employee", juan.qr_token))
+    assert window._result_title.text() == "Employee confirmed"
+    assert context.attendance.record_for_today(juan) is None
+    window.force_close()
+    qt_app.processEvents()
+
+
+# -- phone settings UI -------------------------------------------------------
+def test_settings_has_phone_tab_with_service_controls(
+    context, qt_app, admin_session
+):
+    from app.ui.settings import SettingsPage
+
+    page = SettingsPage(context)
+    labels = [page._tabs.tabText(i) for i in range(page._tabs.count())]
+    assert "Phone Attendance" in labels
+    assert hasattr(page, "_phone_status")
+    assert hasattr(page, "_phone_start_button")
+    assert hasattr(page, "_phone_stop_button")
+    assert page._editors["phone_enabled"] is not None
+    assert page._editors["phone_port"] is not None
+
+
+def test_settings_phone_start_stop_buttons(context, qt_app, admin_session):
+    from app.ui.settings import SettingsPage
+
+    context.settings.set("phone_enabled", True, "admin")
+    context.settings.set("phone_port", 48234, "admin")
+    page = SettingsPage(context)
+    try:
+        assert context.phone.running is False
+        page._start_phone()
+        assert context.phone.running is True
+        assert context.phone.port == 48234
+        page._stop_phone()
+        assert context.phone.running is False
+    finally:
+        context.phone.stop()
+
+
+def test_settings_phone_start_refuses_when_disabled(
+    context, qt_app, admin_session, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.settings import SettingsPage
+
+    messages: list = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        staticmethod(lambda *a, **k: messages.append(a) or QMessageBox.StandardButton.Ok),
+    )
+    assert context.settings.settings.phone_enabled is False
+    page = SettingsPage(context)
+    page._start_phone()
+    assert context.phone.running is False
+    assert messages, "the admin must be told to enable phone attendance first"
+
+
+def test_qr_page_phone_checkin_preview(context, qt_app, team, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.qr_management import QRManagementPage
+
+    shown: list = []
+    monkeypatch.setattr(QDialog, "exec", lambda self: shown.append(True) or 0)
+    page = QRManagementPage(context)
+    page._table.selectRow(0)
+    page._preview_phone_qr()
+    assert shown == [True]
+    phone_files = list(context.paths.qr_dir.glob("phone_*.png"))
+    assert phone_files, "a phone clock-in/out QR image must be rendered"
+
+
+# -- custom badge codes in the UI --------------------------------------------
+def test_employee_dialog_saves_badge_code(context, qt_app, admin_session):
+    from app.ui.employee_management import EmployeeDialog
+
+    dialog = EmployeeDialog(context, None)
+    dialog._name.setText("Badge Person")
+    dialog._badge.setText("BP-007")
+    dialog._on_save()
+    created = context.employees.get_by_code(dialog._code.text())
+    assert created is not None
+    assert created.badge_code == "BP-007"
+
+
+def test_employee_dialog_rejects_duplicate_badge(context, qt_app, team):
+    from app.ui.employee_management import EmployeeDialog
+
+    juan = context.employees.get_by_code("EMP-001")
+    context.employees.update(juan, juan.full_name, badge_code="TAKEN", admin_username="admin")
+
+    dialog = EmployeeDialog(context, None)
+    dialog._name.setText("Someone Else")
+    dialog._badge.setText("taken")
+    dialog._on_save()
+    assert not dialog._errors["badge_code"].isHidden()
+    assert context.employees.list(search="Someone Else") == []
+
+
+def test_employee_table_shows_badge_column(context, qt_app, team):
+    from app.ui.employee_management import EmployeePage
+
+    juan = context.employees.get_by_code("EMP-001")
+    context.employees.update(juan, juan.full_name, badge_code="J-1", admin_username="admin")
+    page = EmployeePage(context)
+    headers = [
+        page._table.horizontalHeaderItem(c).text() for c in range(page._table.columnCount())
+    ]
+    assert "Custom Code" in headers
+    badge_column = headers.index("Custom Code")
+    values = [page._table.item(r, badge_column).text() for r in range(page._table.rowCount())]
+    assert "J-1" in values
+
+
+def test_kiosk_manual_entry_accepts_badge_code(context, qt_app, admin_session, frozen):
+    from app.ui.attendance_kiosk import KioskWindow
+
+    context.settings.set("require_employee_qr", False, "admin")
+    juan = context.employees.create(
+        "EMP-001", "Juan Dela Cruz", admin_username="admin", badge_code="JD-42"
+    )
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+    window.handle_scan("jd-42")
+    assert window._employee is not None
+    assert window._employee.employee_id == juan.employee_id
+    assert window._result_title.text() == "Employee confirmed"
+    window.force_close()
+    qt_app.processEvents()
+
+
+# -- Google Sheets UI ----------------------------------------------------------
+def test_reports_page_has_sheets_button_with_helpful_state(context, qt_app, team):
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    assert page._sheets_button.text() == "Send to Google Sheets"
+    # Libraries not installed here and feature off: disabled with guidance.
+    assert page._sheets_button.isEnabled() is False
+    assert "Settings" in page._sheets_button.toolTip() or "packages" in page._sheets_button.toolTip()
+
+
+def test_settings_has_sheets_tab_with_key_status(context, qt_app, admin_session):
+    from app.ui.settings import SettingsPage
+
+    page = SettingsPage(context)
+    labels = [page._tabs.tabText(i) for i in range(page._tabs.count())]
+    assert "Google Sheets" in labels
+    assert hasattr(page, "_sheets_status")
+    assert "No service account" in page._sheets_status.text()
+    assert page._editors["sheets_enabled"] is not None
+    assert page._editors["sheets_spreadsheet_id"] is not None
+
+
+def test_settings_sheets_key_picker_stores_valid_file(
+    context, qt_app, admin_session, tmp_path, monkeypatch
+):
+    import json
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.ui.settings import SettingsPage
+
+    key = tmp_path / "sa.json"
+    key.write_text(json.dumps({
+        "type": "service_account",
+        "project_id": "demo",
+        "private_key_id": "abc",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----\n",
+        "client_email": "shiftora@demo.iam.gserviceaccount.com",
+        "client_id": "123",
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(key), ""))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+    )
+    page = SettingsPage(context)
+    page._choose_sheets_key()
+    assert "iam.gserviceaccount.com" in page._sheets_status.text()
+
+
+def test_settings_test_sheets_connection_flow(context, qt_app, admin_session, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from app.ui.settings import SettingsPage
+
+    page = SettingsPage(context)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: infos.append(a)))
+
+    # Missing spreadsheet ID shows warning/info
+    page._test_sheets_connection()
+    assert any("Missing spreadsheet ID" in str(item) for item in infos)
+
+    # With spreadsheet ID and mocked verify_connection
+    page._editors["sheets_spreadsheet_id"].setText("dummy-sheet-123")
+    monkeypatch.setattr(
+        "app.services.google_sheets.verify_connection",
+        lambda key, sheet: "Connected Test Sheet",
+    )
+    infos.clear()
+    page._test_sheets_connection()
+    assert any("Connected Test Sheet" in str(item) for item in infos)
+

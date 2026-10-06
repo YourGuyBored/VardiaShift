@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.constants import QR_EMPLOYEE, QR_TIME_IN, QR_TIME_OUT
+from app.phone.server import PhoneAddressError
 from app.ui import theme
 from app.ui.widgets import Card, EmptyState, PrimaryButton, clear_table_widgets
 
@@ -218,7 +219,7 @@ class QRManagementPage(QWidget):
 
         open_folder = QPushButton("Open QR folder")
         open_folder.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_folder.clicked.connect(lambda: self.context.backups.open_backups_folder())
+        open_folder.clicked.connect(lambda: self.context.backups.open_qr_folder())
         row.addWidget(open_folder)
         return row
 
@@ -324,6 +325,15 @@ class QRManagementPage(QWidget):
         new_code.setCursor(Qt.CursorShape.PointingHandCursor)
         new_code.clicked.connect(self._regenerate_employee)
         toolbar.addWidget(new_code)
+
+        phone_button = QPushButton("Phone clock-in / out QR")
+        phone_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        phone_button.setToolTip(
+            "Show a QR code the employee scans with their phone camera to "
+            "open their personal page, where they tap Time in or Time out."
+        )
+        phone_button.clicked.connect(self._preview_phone_qr)
+        toolbar.addWidget(phone_button)
         card.add_layout(toolbar)
 
         self._table = QTableWidget(0, len(EMPLOYEE_COLUMNS))
@@ -506,6 +516,37 @@ class QRManagementPage(QWidget):
                 self._table.setItem(index, column, item)
         self._table.setVisible(bool(employees))
         self._empty.setVisible(not employees)
+
+    def _preview_phone_qr(self) -> None:
+        employee = self._employee_selected()
+        if employee is None:
+            QMessageBox.information(self, "No selection", "Select an employee first.")
+            return
+        try:
+            url = self.context.qr.phone_checkin_url(employee)
+            path = self.context.qr.render_phone_qr(employee)
+        except PhoneAddressError as exc:
+            QMessageBox.warning(self, "Cannot build the phone QR yet", str(exc))
+            return
+        except ValueError as exc:
+            QMessageBox.warning(self, "Could not build QR", str(exc))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Phone clock-in / out - {employee.full_name}")
+        layout = QVBoxLayout(dialog)
+        preview = QRPreview(
+            f"{employee.full_name} - phone clock-in / clock-out",
+            "Point the phone camera at this code and the page opens by "
+            "itself, with Time in and Time out buttons. The phone must be on "
+            "the same network as this computer, and phone attendance must be "
+            "enabled in Settings.",
+        )
+        preview.set_content(path, employee.full_name, url, url)
+        layout.addWidget(preview)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def _preview_employee(self) -> None:
         employee = self._employee_selected()

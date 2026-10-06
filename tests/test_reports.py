@@ -43,7 +43,10 @@ def test_daily_report_includes_not_in_rows(context, admin, team, frozen):
     friday = frozen.at(23, 0, 4).date()   # nobody worked on day 4 of the week
     report = context.reports.daily_report(friday, employee_id=None)
     assert report.rows
-    assert {row[-1] for row in report.rows} == {"Not In"}
+    status_index = report.headers.index("Status")
+    source_index = report.headers.index("Source")
+    assert {row[status_index] for row in report.rows} == {"Not In"}
+    assert {row[source_index] for row in report.rows} == {"-"}
     assert {row[0] for row in report.rows} == {"EMP-001", "EMP-002", "EMP-003"}
 
 
@@ -267,3 +270,28 @@ def test_empty_report_still_exports(context, admin, tmp_path):
     path = context.reports.write_csv(report, tmp_path / "empty.csv")
     assert path.is_file()
     assert context.reports.write_xlsx is not None
+
+# -- spreadsheet formula injection -------------------------------------------
+def test_csv_neutralises_formula_cells(context, admin, tmp_path):
+    sneaky = context.employees.create(
+        "EMP-666", "=HYPERLINK(1)", admin_username="admin"
+    )
+    report = context.reports.daily_report(context.clock.today())
+    path = context.reports.write_csv(report, tmp_path / "sneaky.csv")
+    text = path.read_text(encoding="utf-8-sig")
+    assert ",=HYPERLINK(1)," not in text
+    assert "'=HYPERLINK(1)" in text
+
+
+def test_sanitize_spreadsheet_cell_only_touches_risky_text():
+    from app.services.report_service import sanitize_spreadsheet_cell
+
+    assert sanitize_spreadsheet_cell("=HYPERLINK(1)") == "'=HYPERLINK(1)"
+    assert sanitize_spreadsheet_cell("+123") == "'+123"
+    assert sanitize_spreadsheet_cell("-5") == "'-5"
+    assert sanitize_spreadsheet_cell("@user") == "'@user"
+    assert sanitize_spreadsheet_cell("Juan Dela Cruz") == "Juan Dela Cruz"
+    assert sanitize_spreadsheet_cell("8h 12m") == "8h 12m"
+    assert sanitize_spreadsheet_cell(42) == 42
+    assert sanitize_spreadsheet_cell(None) is None
+    assert sanitize_spreadsheet_cell("") == ""

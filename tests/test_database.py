@@ -274,3 +274,64 @@ def test_scan_events_purge(context, admin, employee, frozen):
 def test_shutdown_is_safe(context):
     context.shutdown()
     context.shutdown()
+
+# -- schema version 5 (phone source) -----------------------------------------
+def test_migration_rebuild_preserves_data_and_widens_source(context, admin, employee, frozen):
+    from app.database.migrations import current_version, migrate, set_meta
+
+    context.attendance.time_in(employee, frozen.at(9, 0))
+    before = context.repositories.attendance.list_for_range("2000-01-01", "2099-12-31")
+    assert len(before) == 1
+
+    # Simulate an older install, then upgrade it in place.
+    from app.database.migrations import SCHEMA_VERSION
+
+    set_meta(context.database, "schema_version", "4")
+    context.database.execute("DROP INDEX IF EXISTS idx_scan_events_token")
+    assert migrate(context.database) == SCHEMA_VERSION
+    assert current_version(context.database) == SCHEMA_VERSION
+
+    after = context.repositories.attendance.list_for_range("2000-01-01", "2099-12-31")
+    assert len(after) == 1
+    assert after[0].time_in == before[0].time_in
+    assert after[0].source == "qr"
+
+    tables = context.database.table_names()
+    assert "attendance" in tables
+    assert "attendance_new" not in tables
+
+    # Phone attendance now persists.
+    context.attendance.time_out(employee, frozen.at(17, 0), source="phone")
+    record = context.attendance.record_for_today(employee)
+    assert record.source == "phone"
+
+    # Unknown sources and negative durations are rejected by the database.
+    import sqlite3
+
+    with pytest.raises(sqlite3.IntegrityError):
+        context.database.execute(
+            "INSERT INTO attendance (employee_id, work_date, time_in, source, created_at, updated_at)"
+            " VALUES (?, '2026-01-01', '2026-01-01T09:00:00', 'pigeon', 'x', 'x')",
+            (employee.employee_id,),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        context.database.execute(
+            "UPDATE attendance SET duration_minutes = -5 WHERE attendance_id = ?",
+            (record.attendance_id,),
+        )
+
+
+def test_scan_events_token_index_exists(context):
+    rows = context.database.query(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_scan_events_token'"
+    )
+    assert len(rows) == 1
+
+
+def test_open_qr_folder(context, monkeypatch):
+    revealed = []
+    monkeypatch.setattr("app.services.backup_service._reveal", lambda path: revealed.append(path))
+    qr_dir = context.backups.open_qr_folder()
+    assert qr_dir.exists()
+    assert revealed == [qr_dir]
+

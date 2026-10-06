@@ -38,13 +38,21 @@ manages itself. There is nothing to install, configure, or host.
 
 You do **not** need Python or any technical setup.
 
-1. Go to the repository's **Releases** page (`Releases` on the right sidebar).
-2. Download the latest release for your system:
-   * Windows: **`Shiftora-Windows-x64.zip`**
-   * Linux: **`Shiftora-Linux-x64.tar.gz`**
-3. **Extract** the archive anywhere you like.
-4. Open **`Shiftora.exe`** (Windows) or **`Shiftora`** (Linux).
-5. That's it - the app starts and creates its own data folder automatically.
+**Windows (easiest):** download **`Shiftora-Setup-Windows-x64.exe`** from the
+repository's **Releases** page, run it, and follow the installer. It adds a
+Start Menu entry, an optional desktop shortcut, and an uninstaller.
+
+**Portable (no install):** download **`Shiftora-Windows-x64.zip`** (Windows)
+or **`Shiftora-Linux-x64.tar.gz`** (Linux), extract it anywhere, and open
+**`Shiftora.exe`** (Windows) or **`Shiftora`** (Linux).
+
+**From source (developers and troubleshooting):** install Python 3.10+,
+download the source ZIP from GitHub, extract it, and double-click
+**`setup_windows.bat`**. It installs everything automatically and puts a
+Shiftora shortcut on your desktop. (On Linux/macOS: `pip install -r
+requirements.txt`, then `python run.py`.)
+
+In every case the app starts and creates its own data folder automatically.
 
 > Your data lives in a per-user folder, never next to the executable:
 > `%LOCALAPPDATA%\Shiftora` on Windows,
@@ -98,7 +106,16 @@ Open **Employees** → **Add Employee** and fill in:
 | Full Name      | Juan Dela Cruz       |
 | Department     | IT                   |
 | Position       | Student Assistant    |
+| Custom code    | Optional, e.g. badge `4242` |
 | Weekly goal    | Organisation default, or e.g. 20 hours |
+
+The **custom code** is a human-typable identifier (badge number, short code,
+nickname - no length limit, almost anything goes except control characters).
+Employees can type it
+instead of scanning when a reader is unavailable, it is searchable, and it is
+printed on their QR card. It never replaces the secure QR token inside the
+code itself, which stays a fixed random value so old printouts keep working
+exactly as before.
 
 Employees are listed with their status (**Active** / **Inactive**), date added
 and weekly goal. You can **edit**, **deactivate/reactivate**, and search them.
@@ -156,11 +173,19 @@ It is a deliberately simple full-screen screen with a live clock:
 ================================
 ```
 
+Leaving the kiosk requires the administrator password (Exit kiosk button
+or the window close button) - employees cannot reach the admin screens from
+it. Quitting Shiftora itself always works without a password.
+
+**Single-scan mode (optional):** enable *Single-scan clocking* in
+Settings → Attendance and one employee scan is enough - Shiftora records
+time-in when the employee is not working, and time-out when they are.
+
 **Arriving:**
 
 1. Scan your personal employee QR.
 2. The kiosk greets you by name.
-3. Scan the **TIME IN** code.
+3. Scan the **TIME IN** code (skipped entirely in single-scan mode).
 
 ```text
 TIME IN SUCCESSFUL
@@ -207,6 +232,56 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 
 ---
 
+## Phone clock-in / clock-out (same Wi-Fi, no internet needed)
+
+Employees can also clock in and out from their phone browser - nothing to
+install, no accounts, no typing:
+
+1. In Shiftora, open **Settings → Phone Attendance**, tick
+   *Enable phone attendance*, save, and press **Start service**. The panel
+   shows the exact base address for phones.
+2. On the **QR Codes** page, select an employee and press
+   **Phone clock-in / out QR**. Print it or show it on screen.
+3. The employee joins the **same Wi-Fi** as the Shiftora computer and points
+   their phone camera at the code. The QR holds a full web address, so the
+   page opens by itself in the browser - no typing, no tapping a link.
+4. Their personal page shows whether they are currently clocked in and offers
+   two buttons: **Time in** (blue) and **Time out** (red). They tap the one
+   they mean. The result is shown immediately, including hours worked after
+   time-out.
+
+Both buttons are always shown, so an employee never has to guess. Each works
+only once per page load, and pressing the wrong one is refused with a plain
+message rather than recording the opposite action - Shiftora still enforces
+one session per day, so a second time-in or a time-out with no open session
+is rejected either way.
+
+The service only runs while enabled and only listens on this computer's own
+networks (no UPnP, no port forwarding, no cloud). Turning the feature off in
+Settings stops a running service immediately.
+
+Details worth knowing:
+
+* The QR encodes this computer's LAN address, so it only works while the
+  Shiftora computer is on the same network. If the address changes (a
+  different Wi-Fi, or a DHCP renewal) the printed code stops working and
+  needs reprinting - the status panel in Settings shows the current address.
+* Printing a phone QR needs a network address. If the computer is not on a
+  network yet, Shiftora says so instead of printing a code that would scan
+  fine and then open nothing.
+* The link carries the same revocable token as the employee QR - regenerating
+  the employee QR invalidates old phone links too.
+* Each button tap uses its own one-time code, so double-taps and replays
+  record nothing twice. Pressing one button does not spend the other's code.
+  Simultaneous requests from kiosk and phone cannot create duplicate rows
+  either.
+* Phone records appear as **Phone** in the dashboard, attendance views and
+  reports, alongside Desktop and Admin-correction entries.
+* If the service won't start, the port is probably busy - change
+  *Phone service port* (default `8123`) and make sure the computer's
+  firewall allows it on private networks. The status panel shows the exact
+  address phones should open.
+
 ## Administrator workflow
 
 **Dashboard** - who is working right now, who timed out, who is missing a
@@ -225,7 +300,8 @@ The original values stay in the **audit log** with your username, old value,
 new value and reason. Nothing is ever silently overwritten.
 
 **Reports** - daily, weekly, monthly and custom-range reports, optionally per
-employee, exported as **CSV** (always) or **XLSX**.
+employee, exported as **CSV** (always), **XLSX**, or sent straight to
+**Google Sheets** (see below).
 
 **Settings** - organisation name, time zone, date/time formats, default
 weekly goal (20/25/30/35/40 presets), work-week days, shift times, daily cap,
@@ -237,6 +313,36 @@ auto sign-out, and audit retention. Everything persists in the database.
 from a file, automatic verification before restoring, and an automatic safety
 copy of the current database first. Restoring signs you out so you sign back
 in against the restored data.
+
+---
+
+## Google Sheets export (optional)
+
+Any report can be uploaded as a new tab into a Google spreadsheet, so
+attendance data sits next to anything else you track there. This is fully
+optional: without it Shiftora works exactly as before, offline.
+
+One-time setup (about five minutes, needs internet once):
+
+1. Nothing to install: the Sheets libraries ship inside Shiftora
+   (desktop and packaged builds alike).
+2. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project, enable the **Google Sheets API**, then create a **service
+   account** (IAM & Admin → Service Accounts) and download its **JSON key**.
+3. Open your spreadsheet and **Share** it with the service account's email
+   address (Editor role). The address is inside the JSON file as
+   `client_email`.
+4. In Shiftora: **Settings → Google Sheets** → *Choose service account
+   file…*, pick the JSON key, tick *Enable Google Sheets export*, paste the
+   **Spreadsheet ID** (the long part of the sheet URL between `/d/` and
+   `/edit`), and save.
+5. On the **Reports** page, generate any report and press **Send to Google
+   Sheets**. Each upload creates a timestamped tab — existing tabs are never
+   overwritten.
+
+The key file is validated before it is stored, lives only in your local data
+folder, and is never logged. Uploads reuse the same formula-safe cell
+handling as the CSV/XLSX exports.
 
 ---
 
@@ -254,10 +360,10 @@ python run.py
 Optional extras:
 
 ```bash
-pip install -r requirements-optional.txt   # webcam scanning (opencv)
+pip install -r requirements-optional.txt   # webcam scanning (Google Sheets ships built-in)
 ```
 
-Run the test suite (303 tests: services, QR, reports, backup, GUI):
+Run the test suite (469 tests: services, QR, reports, backup, phone, sheets, GUI):
 
 ```bash
 python -m pytest tests/ -q
@@ -270,6 +376,51 @@ display:
 ```bash
 QT_QPA_PLATFORM=xcb python -m pytest tests/test_ui.py
 ```
+
+### Committing and publishing (VS Code)
+
+Open the folder in VS Code, then **Terminal → Run Task**. There are four:
+
+| Task | What it does |
+|---|---|
+| **Commit: test, stage, ask, commit (never pushes)** | The main one. Also bound to Ctrl+Shift+B. |
+| **Tests: run full suite** | Runs pytest only. Stages and commits nothing. |
+| **Git: check for secrets and junk before committing** | Previews exactly what would be staged. |
+| **Git: push to origin** | Separate on purpose, so a commit never publishes by accident. |
+
+The commit task runs, in order:
+
+1. the **full test suite** - it stops immediately if anything fails;
+2. `scripts/precommit_check.py` - see below;
+3. `git add -A`;
+4. asks for a commit message, then commits.
+
+Nothing is staged or committed if step 1 or 2 fails. It never pushes.
+
+All four tasks invoke the project's own `.venv`, so they work whether or not
+a terminal has the virtual environment activated, and on Windows and Linux
+alike.
+
+#### The pre-commit guard
+
+`scripts/precommit_check.py` refuses to let these into a public repository:
+
+- **SQLite databases** and their `-wal`/`-shm`/`-journal` files - these hold
+  real employee and attendance data;
+- private keys, certificates, `.env` files;
+- virtual environments, `dist/`, `build/`, `__pycache__` and other caches;
+- staged text containing private keys, Google / AWS / GitHub / Slack /
+  Stripe credentials, or a database connection string.
+
+Test files are exempt from the content scan, because Shiftora's own tests
+hold a fake PEM on purpose. Run it on its own any time:
+
+```bash
+python scripts/precommit_check.py --list   # show what would be staged
+```
+
+If a real secret was already committed, deleting it is not enough - rotate
+the key.
 
 ---
 
@@ -305,9 +456,11 @@ Shiftora.exe
    ↓  Run (no Python needed)
 ```
 
-Tagged pushes (`v*`) automatically build both packages and publish a GitHub
-release via `.github/workflows/release.yml`. Every push also runs the full
-test suite on Windows and Linux via `.github/workflows/tests.yml`.
+Tagged pushes (`v*`) automatically build the packages, compile the Windows
+installer (`installer/windows/Shiftora.iss`), and publish a GitHub release
+with `Shiftora-Setup-Windows-x64.exe` plus the portable archives, via
+`.github/workflows/release.yml`. Every push also runs the full test suite on
+Windows and Linux via `.github/workflows/tests.yml`.
 
 ---
 
@@ -317,19 +470,23 @@ test suite on Windows and Linux via `.github/workflows/tests.yml`.
 shiftora/
 ├── app/
 │   ├── main.py               # entry point, setup→login→main state machine
-│   ├── context.py            # composition root (database, services, QR)
+│   ├── context.py            # composition root (database, services, QR, phone)
 │   ├── constants.py
 │   ├── database/             # SQLite connection, migrations, repositories
 │   ├── models/               # admin, employee, attendance, settings, QR, audit
 │   ├── services/             # auth, employees, attendance, reports, backup, QR, settings
+│   ├── phone/                # local-network clock-in/out service (stdlib HTTP)
 │   ├── qr/                   # payload format, QR/card image generation, scanner widget
 │   ├── ui/                   # setup, login, dashboard, employees, attendance,
 │   │                         # kiosk, QR management, reports, settings, admin
 │   └── utils/                # app-data paths, time utils, validation
-├── tests/                    # 295 pytest tests (services, QR, reports, DB, UI)
+├── tests/                    # 469 pytest tests (services, QR, reports, DB, UI)
+├── scripts/                  # one-click commit + pre-commit secret guard
+├── installer/windows/        # Inno Setup installer script
 ├── assets/                   # application icon
 ├── data/                     # placeholder (runtime data lives in the OS data dir)
 ├── run.py                    # `python run.py` launcher
+├── setup_windows.bat         # double-click install from source (Windows)
 ├── Shiftora.spec             # PyInstaller specification
 ├── build_windows.bat / build_linux.sh
 ├── requirements*.txt / pyproject.toml
@@ -347,6 +504,11 @@ without rewriting screens or queries.
 * PBKDF2-HMAC-SHA256 password hashing (390 000 iterations), per-password salt.
 * QR payloads contain only opaque random tokens - no names, IDs or personal
   data. Tokens are revocable individually.
+* Phone check-in links use the same tokens, need a single-use code per tap,
+  answer unknown links with an identical generic page, and throttle repeated
+  failures per address.
+* Exported CSV/XLSX cells starting with `=`, `+`, `-` or `@` are neutralised
+  so spreadsheet apps never evaluate employee-entered text as formulas.
 * Parameterised SQL everywhere; destructive restores always take a safety copy.
 * Admin-only configuration, session handling with auto sign-out.
 * Full audit log for sign-ins, employee changes, corrections, QR rotations,

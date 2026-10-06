@@ -29,6 +29,11 @@ from app.models.qr_token import QRToken
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+#: Sentinel for update methods: leave this column untouched. Plain ``None``
+#: means "clear it to NULL". Passing nothing used to silently do nothing,
+#: which hid callers that meant to clear the value.
+UNCHANGED: Any = object()
+
 
 def generate_token(length: int = 24) -> str:
     """URL-safe, cryptographically strong token used inside QR payloads."""
@@ -96,7 +101,7 @@ class AdminRepository:
 class EmployeeRepository:
     COLUMNS = (
         "employee_id, employee_code, full_name, department, position, status, "
-        "weekly_goal_hours, qr_token, date_added, created_at, updated_at"
+        "weekly_goal_hours, badge_code, qr_token, date_added, created_at, updated_at"
     )
 
     def __init__(self, db: Database) -> None:
@@ -112,18 +117,20 @@ class EmployeeRepository:
         weekly_goal_hours: int | None = None,
         qr_token: str | None = None,
         date_added: str | None = None,
+        badge_code: str | None = None,
     ) -> int:
         now = utc_now()
         return self.db.insert_returning_id(
             "INSERT INTO employees (employee_code, full_name, department, position, status, "
-            "weekly_goal_hours, qr_token, date_added, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)",
+            "weekly_goal_hours, badge_code, qr_token, date_added, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)",
             (
                 employee_code,
                 full_name,
                 department,
                 position,
                 weekly_goal_hours,
+                badge_code,
                 qr_token or generate_token(24),
                 date_added or now[:10],
                 now,
@@ -139,12 +146,20 @@ class EmployeeRepository:
         position: str = "",
         weekly_goal_hours: int | None = None,
         employee_code: str | None = None,
+        badge_code: Any = UNCHANGED,
     ) -> None:
         fields = ["full_name = ?", "department = ?", "position = ?", "weekly_goal_hours = ?"]
         params: list[Any] = [full_name, department, position, weekly_goal_hours]
         if employee_code:
             fields.append("employee_code = ?")
             params.append(employee_code)
+        if badge_code is UNCHANGED:
+            pass  # leave the stored badge code alone
+        elif badge_code is None:
+            fields.append("badge_code = NULL")
+        else:
+            fields.append("badge_code = ?")
+            params.append(badge_code)
         fields.append("updated_at = ?")
         params.append(utc_now())
         params.append(employee_id)
@@ -197,6 +212,33 @@ class EmployeeRepository:
         )
         return Employee.from_row(row) if row else None
 
+    def get_by_badge_code(self, badge_code: str) -> Employee | None:
+        code = (badge_code or "").strip()
+        if not code:
+            return None
+        row = self.db.query_one(
+            f"SELECT {self.COLUMNS} FROM employees WHERE badge_code = ? COLLATE NOCASE",
+            (code,),
+        )
+        return Employee.from_row(row) if row else None
+
+    def badge_exists(self, badge_code: str, exclude_id: int | None = None) -> bool:
+        code = (badge_code or "").strip()
+        if not code:
+            return False
+        if exclude_id is None:
+            row = self.db.query_one(
+                "SELECT 1 FROM employees WHERE badge_code = ? COLLATE NOCASE",
+                (code,),
+            )
+        else:
+            row = self.db.query_one(
+                "SELECT 1 FROM employees WHERE badge_code = ? COLLATE NOCASE "
+                "AND employee_id != ?",
+                (code, exclude_id),
+            )
+        return row is not None
+
     def code_exists(self, employee_code: str, exclude_id: int | None = None) -> bool:
         if exclude_id is None:
             row = self.db.query_one(
@@ -231,9 +273,10 @@ class EmployeeRepository:
         params: list[Any] = []
         if search:
             clauses.append("(full_name LIKE ? COLLATE NOCASE OR employee_code LIKE ? COLLATE NOCASE "
-                           "OR department LIKE ? COLLATE NOCASE OR position LIKE ? COLLATE NOCASE)")
+                           "OR department LIKE ? COLLATE NOCASE OR position LIKE ? COLLATE NOCASE "
+                           "OR badge_code LIKE ? COLLATE NOCASE)")
             like = f"%{search}%"
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like])
         if status:
             clauses.append("status = ?")
             params.append(status)
@@ -268,7 +311,8 @@ class EmployeeRepository:
 class AttendanceRepository:
     SELECT = (
         "SELECT a.attendance_id, a.employee_id, a.work_date, a.time_in, a.time_out, "
-        "a.duration_minutes, a.status, a.is_corrected, a.note, a.created_at, a.updated_at, "
+        "a.duration_minutes, a.status, a.source, a.is_corrected, a.note, a.created_at, "
+        "a.updated_at, "
         "e.employee_code, e.full_name, e.department, e.position, e.status AS employee_status "
         "FROM attendance a JOIN employees e ON e.employee_id = a.employee_id"
     )
@@ -294,12 +338,18 @@ class AttendanceRepository:
         )
 
     def close_session(
-        self, attendance_id: int, time_out: str, duration_minutes: int, note: str = ""
+        self,
+        attendance_id: int,
+        time_out: str,
+        duration_minutes: int,
+        note: str = "",
+        source: str = "qr",
     ) -> None:
         self.db.execute(
             "UPDATE attendance SET time_out = ?, duration_minutes = ?, status = 'closed', "
-            "note = CASE WHEN ? = '' THEN note ELSE ? END, updated_at = ? WHERE attendance_id = ?",
-            (time_out, duration_minutes, note, note, utc_now(), attendance_id),
+            "source = ?, note = CASE WHEN ? = '' THEN note ELSE ? END, "
+            "updated_at = ? WHERE attendance_id = ?",
+            (time_out, duration_minutes, source, note, note, utc_now(), attendance_id),
         )
 
     def set_status(self, attendance_id: int, status: str) -> None:
@@ -329,7 +379,8 @@ class AttendanceRepository:
             duration = TimeUtils.duration_minutes(new_in, new_out)
         self.db.execute(
             "UPDATE attendance SET time_in = ?, time_out = ?, duration_minutes = ?, status = ?, "
-            "is_corrected = 1, corrected_by = ?, note = ?, updated_at = ? WHERE attendance_id = ?",
+            "source = 'correction', is_corrected = 1, corrected_by = ?, note = ?, "
+            "updated_at = ? WHERE attendance_id = ?",
             (new_in, new_out, duration, status, corrected_by, note, utc_now(), attendance_id),
         )
         return duration

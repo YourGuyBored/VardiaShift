@@ -56,6 +56,12 @@ class ApplicationContext:
         self.qr.ensure_action_token("time_in")
         self.qr.ensure_action_token("time_out")
 
+        # Local-network phone check-in. Constructed but never started here;
+        # the UI (or the auto-start setting) starts it explicitly.
+        from app.phone.server import PhoneServer
+
+        self.phone = PhoneServer(self)
+
     # -- lifecycle -----------------------------------------------------------
     def bootstrap(self) -> None:
         migrate(self.database)
@@ -98,9 +104,23 @@ class ApplicationContext:
 
     def shutdown(self) -> None:
         try:
+            self.phone.stop()
+        except Exception:  # pragma: no cover - shutdown must never raise
+            pass
+        try:
             self.database.close_all()
         except Exception:  # pragma: no cover - shutdown must never raise
             pass
+
+    def maybe_autostart_phone(self) -> tuple[bool, str]:
+        """Start the phone service if the settings ask for it. Never raises."""
+        try:
+            settings = self.settings.settings
+            if settings.phone_enabled and settings.phone_auto_start:
+                return self.phone.start(settings.phone_port)
+        except Exception as exc:  # pragma: no cover - best effort
+            return False, f"Phone service could not start: {exc}."
+        return False, "Phone auto-start is off."
 
 
 # Convenience factory used by main.py and the test-suite.

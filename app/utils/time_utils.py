@@ -76,9 +76,39 @@ def available_timezones() -> list[str]:
         return ["UTC"]
 
 
+UTC_ALIASES = {"UTC", "GMT", "Etc/UTC", "Etc/GMT", "UCT", "Universal", "Zulu"}
+
+
+def resolve_zone(name: str):
+    """Return a tzinfo for ``name`` without ever raising.
+
+    Windows ships no IANA time-zone database, so ``ZoneInfo`` fails there
+    unless the ``tzdata`` package is installed (it is a Shiftora dependency
+    on Windows). Anything unresolvable falls back to fixed UTC, so the
+    application keeps working with a degraded zone instead of crashing.
+    """
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        from datetime import timezone as _timezone
+
+        return _timezone.utc
+
+
+def tz_database_available() -> bool:
+    """Whether named (non-UTC) zones resolve on this machine."""
+    try:
+        ZoneInfo("Asia/Manila")
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return False
+    return True
+
+
 def is_valid_timezone(name: str) -> bool:
     if not name:
         return False
+    if name.strip() in UTC_ALIASES:
+        return True
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError, OSError):
@@ -120,8 +150,8 @@ class TimeUtils:
 
     # -- clocks --------------------------------------------------------------
     @property
-    def tz(self) -> ZoneInfo:
-        return ZoneInfo(self.timezone_name)
+    def tz(self):
+        return resolve_zone(self.timezone_name)
 
     def now(self) -> datetime:
         """Current local wall-clock time in the configured zone."""
@@ -287,7 +317,9 @@ class TimeUtils:
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
     def utc_now_iso(self) -> str:
-        return datetime.now(tz=ZoneInfo("UTC")).replace(microsecond=0).strftime(ISO_FORMAT)
+        from datetime import timezone as _timezone
+
+        return datetime.now(tz=_timezone.utc).replace(microsecond=0).strftime(ISO_FORMAT)
 
     def backup_stamp(self) -> str:
         return self.now().strftime("%Y-%m-%d_%H-%M-%S")

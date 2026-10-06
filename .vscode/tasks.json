@@ -1,0 +1,107 @@
+{
+    // Shiftora tasks. Run with Terminal → Run Task, or Ctrl+Shift+B for the
+    // first one ("Commit: ..." is the default build task).
+    //
+    // The commit task runs the whole test suite first and refuses to commit if
+    // anything fails. It never pushes. Push is a separate, explicit task.
+    //
+    // Commands point at the project's own virtual environment, so they work
+    // whether or not the terminal has an activated venv, and on both Windows
+    // and Linux. scripts/one_click_commit.py itself also auto-detects .venv.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Commit: test, stage, ask, commit (never pushes)",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python",
+            "windows": {
+                "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "osx": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "args": ["${workspaceFolder}/scripts/one_click_commit.py"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "focus": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Tests: run full suite",
+            "detail": "Run every pytest test. No staging, no commit.",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python",
+            "windows": {
+                "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "osx": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "args": ["-m", "pytest", "tests/", "-q"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Git: check for secrets and junk before committing",
+            "detail": "Runs the pre-commit guard, then lists what would be staged.",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python",
+            "windows": {
+                "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "osx": {
+                "command": "${workspaceFolder}/.venv/bin/python"
+            },
+            "args": ["${workspaceFolder}/scripts/precommit_check.py", "--list"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Git: push to origin",
+            "detail": "Separate on purpose: commits never push on their own.",
+            "type": "shell",
+            "command": "git",
+            "args": ["push"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "focus": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

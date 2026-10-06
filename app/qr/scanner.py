@@ -78,6 +78,10 @@ class CameraScanner(QObject):
 
     frame_ready = Signal(QImage)
     decoded = Signal(str)
+    camera_error = Signal(str)
+
+    # Consecutive bad frames before the camera is declared dead (~1 second).
+    FAILURE_THRESHOLD = 8
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -86,8 +90,8 @@ class CameraScanner(QObject):
         self._timer = QTimer(self)
         self._timer.setInterval(INTERVAL_MS)
         self._timer.timeout.connect(self._grab)
-        self._last_payload = ""
-        self._last_at = 0.0
+        self._failures = 0
+        self._error_reported = False
 
     @property
     def available(self) -> bool:
@@ -104,6 +108,8 @@ class CameraScanner(QObject):
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             self._capture = capture
             self._detector = cv2.QRCodeDetector()
+            self._failures = 0
+            self._error_reported = False
             self._timer.start()
             return True, "Camera started."
         except Exception as exc:  # pragma: no cover - hardware dependent
@@ -117,29 +123,42 @@ class CameraScanner(QObject):
             except Exception:  # pragma: no cover
                 pass
         self._capture = None
+        self._failures = 0
 
     @property
     def running(self) -> bool:
         return self._timer.isActive()
 
-    def _grab(self) -> None:  # pragma: no cover - needs a real camera
+    def _grab(self) -> None:
         if self._capture is None:
             return
-        ok, frame = self._capture.read()
+        try:
+            ok, frame = self._capture.read()
+        except Exception:
+            ok, frame = False, None
         if not ok or frame is None:
+            self._note_failure("The camera stopped sending frames.")
             return
-
-        height, width, channels = frame.shape
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
-        self.frame_ready.emit(image.copy())
 
         try:
+            height, width, channels = frame.shape
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
+            self.frame_ready.emit(image.copy())
             payload, points, _ = self._detector.detectAndDecode(frame)
-        except Exception:
+        except Exception as exc:
+            self._note_failure(f"The camera feed could not be read ({exc}).")
             return
+        self._failures = 0
         if payload:
             self.decoded.emit(payload.strip())
+
+    def _note_failure(self, message: str) -> None:
+        self._failures += 1
+        if self._failures >= self.FAILURE_THRESHOLD and not self._error_reported:
+            self._error_reported = True
+            self.stop()
+            self.camera_error.emit(f"{message} The camera was stopped.")
 
 
 class KeyboardWedgeFilter(QObject):
@@ -368,7 +387,10 @@ class ManualEntryDialog(QWidget):
 
         self._list.clear()
         for employee in employees:
-            item = QListWidgetItem(f"{employee.employee_code}   {employee.full_name}")
+            label = f"{employee.employee_code}   {employee.full_name}"
+            if employee.badge_code:
+                label += f"   [{employee.badge_code}]"
+            item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, employee.employee_id)
             self._list.addItem(item)
         if self._list.count():
@@ -385,6 +407,7 @@ class ManualEntryDialog(QWidget):
             if needle in employee.full_name.lower()
             or needle in employee.employee_code.lower()
             or needle in (employee.department or "").lower()
+            or needle in (employee.badge_code or "").lower()
         ]
         self._populate(matches)
 

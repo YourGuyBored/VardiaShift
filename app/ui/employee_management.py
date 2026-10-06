@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from app.constants import WEEKLY_GOAL_PRESETS
 from app.services.employee_service import EmployeeServiceError
 from app.ui import theme
+from app.ui.window_sizing import fit_to_screen
 from app.ui.widgets import (
     ActiveBadge,
     Card,
@@ -33,7 +34,7 @@ from app.ui.widgets import (
 )
 from app.utils.validation import ValidationError, validate_employee_payload
 
-COLUMNS = ["Employee ID", "Full Name", "Department", "Position", "Status", "Date Added", "Weekly Goal"]
+COLUMNS = ["Employee ID", "Full Name", "Department", "Position", "Custom Code", "Status", "Date Added", "Weekly Goal"]
 
 
 class EmployeeDialog(QDialog):
@@ -49,12 +50,13 @@ class EmployeeDialog(QDialog):
         self.context = context
         self.employee = employee
         self.setWindowTitle("Edit employee" if employee else "Add employee")
-        self.setMinimumWidth(520)
+        fit_to_screen(self, (520, 0))
 
         self._code = QLineEdit()
         self._name = QLineEdit()
         self._department = QLineEdit()
         self._position = QLineEdit()
+        self._badge = QLineEdit()
         self._goal = QComboBox()
         self._goal.setEditable(True)
 
@@ -77,6 +79,7 @@ class EmployeeDialog(QDialog):
             "full_name": self._name,
             "department": self._department,
             "position": self._position,
+            "badge_code": self._badge,
             "weekly_goal_hours": self._goal,
         }
 
@@ -92,6 +95,7 @@ class EmployeeDialog(QDialog):
         layout.addWidget(self._row("Full name *", self._name, "Juan Dela Cruz", "full_name"))
         layout.addWidget(self._row("Department", self._department, "IT", "department"))
         layout.addWidget(self._row("Position", self._position, "Student Assistant", "position"))
+        layout.addWidget(self._row("Custom code (optional)", self._badge, "Badge no., short code, nickname", "badge_code"))
         layout.addWidget(self._row("Weekly work goal", self._goal, "", "weekly_goal_hours"))
 
         note = QLabel(
@@ -108,6 +112,7 @@ class EmployeeDialog(QDialog):
             self._name.setText(employee.full_name)
             self._department.setText(employee.department)
             self._position.setText(employee.position)
+            self._badge.setText(employee.badge_code or "")
             self._code.setReadOnly(True)
             self._code.setToolTip("Employee IDs cannot be changed once created.")
 
@@ -177,6 +182,8 @@ class EmployeeDialog(QDialog):
 
     # -- save ----------------------------------------------------------------
     def _on_save(self) -> None:
+        from app.utils.validation import validate_badge_code
+
         self._clear_errors()
         goal = self._goal_value()
         payload = validate_employee_payload(
@@ -186,6 +193,11 @@ class EmployeeDialog(QDialog):
             self._position.text(),
             goal,
         )
+        try:
+            badge = validate_badge_code(self._badge.text())
+        except ValidationError as exc:
+            payload.errors["badge_code"] = exc.message
+            badge = None
         if payload.errors:
             self._show_errors(payload.errors)
             return
@@ -198,6 +210,7 @@ class EmployeeDialog(QDialog):
                     payload.position,
                     payload.weekly_goal_hours,
                     admin_username=self.context.require_admin(),
+                    badge_code=badge,
                 )
             else:
                 self.context.employees.update(
@@ -207,12 +220,22 @@ class EmployeeDialog(QDialog):
                     payload.position,
                     payload.weekly_goal_hours,
                     admin_username=self.context.require_admin(),
+                    badge_code=badge,  # None clears a previously set code
                 )
         except (EmployeeServiceError, ValidationError) as exc:
             message = getattr(exc, "message", str(exc))
             QMessageBox.warning(self, "Could not save", message)
-            if "already exists" in message:
-                self._show_errors({"employee_code": message})
+            code = getattr(exc, "code", "")
+            if code == "duplicate_badge":
+                field = "badge_code"
+            elif code == "duplicate_code" or "already exists" in message:
+                field = "employee_code"
+            elif isinstance(exc, ValidationError) and exc.field_name in self._errors:
+                field = exc.field_name
+            else:
+                field = ""
+            if field:
+                self._show_errors({field: message})
             return
         self.accept()
 
@@ -457,6 +480,7 @@ class EmployeePage(QWidget):
                 employee.full_name,
                 employee.department or "-",
                 employee.position or "-",
+                employee.badge_code or "-",
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -469,14 +493,14 @@ class EmployeePage(QWidget):
             badge_layout.setContentsMargins(4, 2, 4, 2)
             badge_layout.addWidget(badge)
             badge_layout.addStretch(1)
-            self._table.setCellWidget(index, 4, holder)
+            self._table.setCellWidget(index, 5, holder)
 
             for column, value in (
-                (5, clock.format_date(employee.date_added)),
-                (6, f"{goal_hours}h/week" + ("" if employee.has_own_goal else " (default)")),
+                (6, clock.format_date(employee.date_added)),
+                (7, f"{goal_hours}h/week" + ("" if employee.has_own_goal else " (default)")),
             ):
                 cell = QTableWidgetItem(value)
-                if column == 6:
+                if column == 7:
                     cell.setTextAlignment(
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )

@@ -585,3 +585,51 @@ def test_iso_week_label_format():
     from datetime import date as date_cls
 
     assert TimeUtils().iso_week_label(date_cls(2026, 10, 3)) == "2026-W40"
+
+# -- single-scan (automatic) mode --------------------------------------------
+def test_auto_scan_times_in_when_not_working(context, admin, employee, frozen):
+    result = context.attendance.record_auto_scan(employee, "auto:1", frozen.at(9, 0))
+    assert result.success is True
+    assert result.kind == "time_in"
+    assert context.attendance.record_for_today(employee).status == "open"
+
+
+def test_auto_scan_times_out_when_working(context, admin, employee, frozen):
+    context.settings.set("duplicate_scan_window_seconds", 0, "admin")
+    context.attendance.time_in(employee, frozen.at(9, 0))
+    result = context.attendance.record_auto_scan(employee, "auto:2", frozen.at(17, 0))
+    assert result.success is True
+    assert result.kind == "time_out"
+    assert result.session_minutes == 480
+    assert context.attendance.record_for_today(employee).status == "closed"
+
+
+def test_auto_scan_resolves_kind_from_current_state(context, admin, employee, frozen):
+    assert context.attendance.resolve_auto_kind(employee) == "time_in"
+    context.attendance.time_in(employee, frozen.at(9, 0))
+    assert context.attendance.resolve_auto_kind(employee) == "time_out"
+
+
+def test_auto_scan_records_configured_source(context, admin, employee, frozen):
+    result = context.attendance.record_auto_scan(
+        employee, "auto:3", frozen.at(9, 0), source="phone"
+    )
+    assert result.success is True
+    assert context.attendance.record_for_today(employee).source == "phone"
+
+
+def test_auto_scan_rejects_unknown_source(context, admin, employee, frozen):
+    from app.services.attendance_service import ClockError
+
+    with pytest.raises(ClockError):
+        context.attendance.record_auto_scan(
+            employee, "auto:4", frozen.at(9, 0), source="bluetooth"
+        )
+    assert context.attendance.record_for_today(employee) is None
+
+
+def test_source_labels(context):
+    assert context.attendance.source_label("qr") == "Desktop"
+    assert context.attendance.source_label("phone") == "Phone"
+    assert context.attendance.source_label("correction") == "Admin correction"
+    assert context.attendance.source_label("mystery") == "Mystery"

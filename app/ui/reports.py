@@ -133,8 +133,14 @@ class ReportsPage(QWidget):
         folder.setCursor(Qt.CursorShape.PointingHandCursor)
         folder.clicked.connect(self._open_folder)
         buttons.addWidget(folder)
+
+        self._sheets_button = QPushButton("Send to Google Sheets")
+        self._sheets_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sheets_button.clicked.connect(self._send_to_sheets)
+        buttons.addWidget(self._sheets_button)
         buttons.addStretch(1)
         card.add_layout(buttons)
+        self._refresh_sheets_button()
 
         root.addWidget(card, 1)
         self.refresh()
@@ -287,6 +293,7 @@ class ReportsPage(QWidget):
             self._empty.setVisible(True)
         self._csv_button.setEnabled(not report.is_empty)
         self._xlsx_button.setEnabled(not report.is_empty and XLSX_AVAILABLE)
+        self._refresh_sheets_button()
 
     # -- export --------------------------------------------------------------
     def _export_csv(self) -> None:
@@ -322,6 +329,75 @@ class ReportsPage(QWidget):
 
     def _open_folder(self) -> None:
         self.context.backups.open_exports_folder()
+
+    def _refresh_sheets_button(self) -> None:
+        from app.services.google_sheets import sheets_available
+
+        enabled = self.context.settings.settings.sheets_enabled
+        ready = enabled and sheets_available()
+        self._sheets_button.setEnabled(ready and not self._report_empty())
+        if not sheets_available():
+            self._sheets_button.setToolTip(
+                "Sheets libraries are missing from this install."
+            )
+        elif not enabled:
+            self._sheets_button.setToolTip(
+                "Enable Google Sheets export in Settings first."
+            )
+        else:
+            self._sheets_button.setToolTip(
+                "Upload this report as a new tab in the configured spreadsheet."
+            )
+
+    def _report_empty(self) -> bool:
+        return self._report is None or self._report.is_empty
+
+    def _send_to_sheets(self) -> None:
+        from app.services.google_sheets import (
+            GoogleSheetsError,
+            push_report,
+            sheets_available,
+            stored_key_path,
+        )
+
+        if self._report_empty():
+            QMessageBox.information(self, "Nothing to send", "Generate a report first.")
+            return
+        if not sheets_available():
+            QMessageBox.information(
+                self,
+                "Sheets support not installed",
+                "This copy of Shiftora was built without the Sheets "
+                "libraries. Use a release build or install requirements.txt "
+                "from source.",
+            )
+            return
+        settings = self.context.settings.settings
+        if not settings.sheets_enabled:
+            QMessageBox.information(
+                self,
+                "Sheets export is off",
+                "Enable it in Settings → Google Sheets first.",
+            )
+            return
+        self._sheets_button.setEnabled(False)
+        try:
+            title, count = push_report(
+                stored_key_path(self.context.paths.root),
+                settings.sheets_spreadsheet_id,
+                self._report,
+                self.context.clock.export_stamp(),
+            )
+        except GoogleSheetsError as exc:
+            QMessageBox.warning(self, "Upload failed", exc.message)
+            return
+        finally:
+            self._refresh_sheets_button()
+        QMessageBox.information(
+            self,
+            "Sent to Google Sheets",
+            f"Uploaded tab '{title}' ({count} rows).",
+        )
 
 
 __all__ = ["ReportsPage", "TYPES"]

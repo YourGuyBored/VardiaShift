@@ -133,6 +133,7 @@ class Application:
     # -- flow ----------------------------------------------------------------
     def start(self) -> int:
         self.create_qt_app()
+        self.context.maybe_autostart_phone()
         if self.context.needs_setup:
             self._show_setup()
         else:
@@ -211,6 +212,14 @@ class Application:
             self.window = MainWindow(self.context)
             self._pages = build_pages(self.window, self.context)
             self.window.signed_out.connect(self._on_signed_out)
+            # Remembered size/position, re-clamped to this screen. Only
+            # restore a maximized window when it was already up last time,
+            # so a fresh install never opens maximized by surprise.
+            from app.ui.window_sizing import restore_window_geometry, was_visible_last_time
+
+            restore_window_geometry(self.window, "main")
+            if was_visible_last_time("main"):
+                self.window.showMaximized()
         self.window.sidebar.set_user(
             self.context.authentication.current_admin.display_name
             if self.context.authentication.current_admin

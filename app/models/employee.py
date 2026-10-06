@@ -27,6 +27,7 @@ class Employee:
     position: str = ""
     status: str = EmployeeStatus.ACTIVE
     weekly_goal_hours: int | None = None
+    badge_code: str | None = None
     date_added: str = ""
     qr_token: str = ""
     created_at: str = ""
@@ -76,6 +77,7 @@ class Employee:
 
     @classmethod
     def from_row(cls, row) -> "Employee":
+        keys = set(row.keys())
         return cls(
             employee_id=row["employee_id"],
             employee_code=row["employee_code"],
@@ -84,6 +86,7 @@ class Employee:
             position=row["position"] or "",
             status=row["status"],
             weekly_goal_hours=row["weekly_goal_hours"],
+            badge_code=row["badge_code"] if "badge_code" in keys and row["badge_code"] else None,
             date_added=row["date_added"] or "",
             qr_token=row["qr_token"] or "",
             created_at=row["created_at"] or "",

@@ -1,0 +1,11 @@
+# Keep line endings sane across Windows and Linux checkouts.
+* text=auto
+
+# Windows batch files must stay CRLF for cmd.exe.
+*.bat text eol=crlf
+
+# Shell scripts must stay LF.
+*.sh text eol=lf
+
+# Inno Setup script follows Windows conventions.
+*.iss text eol=crlf

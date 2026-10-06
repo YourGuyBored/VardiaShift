@@ -249,3 +249,108 @@ def test_inactive_employee_employee_lookup_still_works(context, admin, employee)
     payload = build_payload("employee", employee.qr_token)
     context.employees.deactivate(employee, "admin")
     assert context.qr.resolve_employee(payload).employee_id == employee.employee_id
+
+# -- custom badge codes ------------------------------------------------------
+def test_create_employee_with_badge_code(context, admin):
+    employee = context.employees.create(
+        "EMP-001", "Juan Dela Cruz", admin_username="admin", badge_code="4242"
+    )
+    assert employee.badge_code == "4242"
+    assert context.repositories.employees.get_by_badge_code("4242").employee_id == (
+        employee.employee_id
+    )
+
+
+def test_badge_code_is_optional_and_blank_means_none(context, admin):
+    employee = context.employees.create("EMP-001", "Juan Dela Cruz", admin_username="admin")
+    assert employee.badge_code is None
+    assert context.repositories.employees.get_by_badge_code("") is None
+    assert context.repositories.employees.get_by_badge_code("nope") is None
+
+
+def test_badge_code_accepts_free_text(context, admin):
+    employee = context.employees.create(
+        "EMP-001", "Juan Dela Cruz", admin_username="admin", badge_code="Night Shift #7 (temp)"
+    )
+    assert employee.badge_code == "Night Shift #7 (temp)"
+
+
+def test_badge_code_has_no_length_cap(context, admin):
+    long_code = "SECTION-9-TEAM-BLUE-SHIFT-B-EXTRA-LONG-BADGE-CODE-7741-ZZ"
+    employee = context.employees.create(
+        "EMP-001", "Juan Dela Cruz", admin_username="admin", badge_code=long_code
+    )
+    assert employee.badge_code == long_code
+    assert context.repositories.employees.get_by_badge_code(long_code) is not None
+
+
+def test_badge_code_rejects_control_text(context, admin):
+    from app.services.employee_service import EmployeeServiceError
+
+    with pytest.raises(EmployeeServiceError):
+        context.employees.create(
+            "EMP-002", "Maria Santos", admin_username="admin", badge_code="bad\x01code"
+        )
+
+
+def test_duplicate_badge_code_rejected(context, admin, employee):
+    from app.services.employee_service import EmployeeServiceError
+
+    context.employees.update(employee, employee.full_name, badge_code="SHARED-1", admin_username="admin")
+    with pytest.raises(EmployeeServiceError) as excinfo:
+        context.employees.create("EMP-002", "Maria Santos", admin_username="admin", badge_code="shared-1")
+    assert excinfo.value.code == "duplicate_badge"
+
+
+def test_update_badge_code_and_clear_it(context, admin, employee):
+    updated = context.employees.update(
+        employee, employee.full_name, badge_code="A-100", admin_username="admin"
+    )
+    assert updated.badge_code == "A-100"
+    cleared = context.employees.update(
+        updated, updated.full_name, badge_code=None, admin_username="admin"
+    )
+    assert cleared.badge_code is None
+    assert context.repositories.employees.get_by_badge_code("A-100") is None
+
+
+def test_update_without_badge_argument_leaves_it_alone(context, admin, employee):
+    context.employees.update(
+        employee, employee.full_name, badge_code="KEEP-ME", admin_username="admin"
+    )
+    untouched = context.employees.update(
+        employee, "Juan Dela Cruz Jr", admin_username="admin"
+    )
+    assert untouched.badge_code == "KEEP-ME"
+    assert untouched.full_name == "Juan Dela Cruz Jr"
+
+
+def test_badge_change_is_audited(context, admin, employee):
+    context.employees.update(
+        employee, employee.full_name, badge_code="B-7", admin_username="admin"
+    )
+    log = context.repositories.audit.list_recent(action="employee_edit")[0]
+    assert "B-7" in log.new_value
+
+
+def test_search_finds_badge_codes(context, admin, employee):
+    context.employees.update(
+        employee, employee.full_name, badge_code="NIGHT-9", admin_username="admin"
+    )
+    assert len(context.employees.list(search="night-9")) == 1
+    assert len(context.employees.list(search="NIGHT")) == 1
+
+
+def test_migration_6_adds_nullable_badge_column(context, admin, employee):
+    from app.database.migrations import current_version, migrate, set_meta
+
+    assert employee.badge_code is None
+    set_meta(context.database, "schema_version", "5")
+    context.database.execute("DROP INDEX IF EXISTS idx_employees_badge")
+    assert migrate(context.database) == 6
+    assert current_version(context.database) == 6
+    assert context.employees.get(employee.employee_id).badge_code is None
+    updated = context.employees.update(
+        employee, employee.full_name, badge_code="M6", admin_username="admin"
+    )
+    assert updated.badge_code == "M6"

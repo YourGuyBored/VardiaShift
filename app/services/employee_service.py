@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.constants import QR_EMPLOYEE
 from app.database.database import utc_now
-from app.database.repositories import Repositories, generate_token
+from app.database.repositories import UNCHANGED, Repositories, generate_token
 from app.models.audit import (
     ACTION_EMPLOYEE_ADD,
     ACTION_EMPLOYEE_DEACTIVATE,
@@ -22,6 +23,7 @@ from app.models.employee import Employee, EmployeeStatus
 from app.utils.validation import (
     ValidationError,
     optional_text,
+    validate_badge_code,
     validate_employee_code,
     validate_employee_payload,
     validate_full_name,
@@ -57,6 +59,7 @@ class EmployeeService:
         position: str = "",
         weekly_goal_hours: int | None = None,
         admin_username: str = "system",
+        badge_code: str | None = None,
     ) -> Employee:
         payload = validate_employee_payload(
             employee_code, full_name, department, position, weekly_goal_hours
@@ -69,6 +72,7 @@ class EmployeeService:
             raise EmployeeServiceError(
                 f"Employee ID '{payload.employee_code}' already exists.", "duplicate_code"
             )
+        badge = self._checked_badge_code(badge_code)
 
         token = generate_token(24)
         try:
@@ -79,6 +83,7 @@ class EmployeeService:
                 position=payload.position,
                 weekly_goal_hours=payload.weekly_goal_hours,
                 qr_token=token,
+                badge_code=badge,
             )
         except Exception as exc:  # pragma: no cover - defensive
             raise EmployeeServiceError(f"Could not save the employee: {exc}", "db_error") from exc
@@ -113,6 +118,7 @@ class EmployeeService:
         weekly_goal_hours: int | None = None,
         employee_code: str | None = None,
         admin_username: str = "system",
+        badge_code: Any = UNCHANGED,
     ) -> Employee:
         name = validate_full_name(full_name)
         dept = optional_text(department, "Department", 80)
@@ -125,10 +131,17 @@ class EmployeeService:
         code = validate_employee_code(employee_code) if employee_code else None
         if code and self.repos.employees.code_exists(code, exclude_id=employee.employee_id):
             raise EmployeeServiceError(f"Employee ID '{code}' already exists.", "duplicate_code")
+        if badge_code is UNCHANGED:
+            badge = UNCHANGED
+        else:
+            badge = self._checked_badge_code(
+                badge_code, exclude_id=employee.employee_id
+            )
 
         before = (
             f"Name: {employee.full_name} | Department: {employee.department or '-'} | "
-            f"Position: {employee.position or '-'} | Goal: {employee.weekly_goal_hours or 'default'}"
+            f"Position: {employee.position or '-'} | Goal: {employee.weekly_goal_hours or 'default'} | "
+            f"Custom code: {employee.badge_code or '-'}"
         )
         self.repos.employees.update(
             employee.employee_id,
@@ -137,12 +150,17 @@ class EmployeeService:
             position=pos,
             weekly_goal_hours=goal,
             employee_code=code,
+            badge_code=badge,
         )
         if code and code != employee.employee_code:
             self.repos.qr_tokens.sync_employee_token(
                 employee.employee_id, employee.qr_token, label=name
             )
-        after = f"Name: {name} | Department: {dept or '-'} | Position: {pos or '-'} | Goal: {goal or 'default'}"
+        new_badge = employee.badge_code if badge is UNCHANGED else badge
+        after = (
+            f"Name: {name} | Department: {dept or '-'} | Position: {pos or '-'} | "
+            f"Goal: {goal or 'default'} | Custom code: {new_badge or '-'}"
+        )
         if before != after or (code and code != employee.employee_code):
             self.repos.audit.log(
                 ACTION_EMPLOYEE_EDIT,
@@ -156,6 +174,20 @@ class EmployeeService:
             )
         updated = self.repos.employees.get(employee.employee_id)
         return updated or employee
+
+    def _checked_badge_code(
+        self, badge_code: str | None, exclude_id: int | None = None
+    ) -> str | None:
+        try:
+            badge = validate_badge_code(badge_code)
+        except ValidationError as exc:
+            raise EmployeeServiceError(exc.message, "validation") from exc
+        if badge and self.repos.employees.badge_exists(badge, exclude_id=exclude_id):
+            raise EmployeeServiceError(
+                f"Custom code '{badge}' is already assigned to someone else.",
+                "duplicate_badge",
+            )
+        return badge
 
     def set_weekly_goal(
         self, employee: Employee, weekly_goal_hours: int | None, admin_username: str = "system"
@@ -275,6 +307,9 @@ class EmployeeService:
 
     def get_by_code(self, employee_code: str) -> Employee | None:
         return self.repos.employees.get_by_code(employee_code)
+
+    def get_by_badge_code(self, badge_code: str) -> Employee | None:
+        return self.repos.employees.get_by_badge_code(badge_code)
 
     def list(
         self,

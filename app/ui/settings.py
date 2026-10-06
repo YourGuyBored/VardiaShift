@@ -35,7 +35,9 @@ from app.models.settings import (
     GROUP_ATTENDANCE,
     GROUP_GENERAL,
     GROUP_KIOSK,
+    GROUP_PHONE,
     GROUP_SECURITY,
+    GROUP_SHEETS,
     GROUP_WORK,
     GROUPS,
 )
@@ -191,8 +193,236 @@ class SettingsPage(QWidget):
 
         card.add_layout(form)
         layout.addWidget(card)
+        if group == GROUP_PHONE:
+            layout.addWidget(self._build_phone_status_card())
+        if group == GROUP_SHEETS:
+            layout.addWidget(self._build_sheets_status_card())
         layout.addStretch(1)
         return page
+
+    def _build_phone_status_card(self) -> QWidget:
+        """Live server controls: status, address, start/stop."""
+        from app.phone.server import lan_ip
+
+        card = Card("Phone service", "")
+        self._phone_status = QLabel("")
+        self._phone_status.setWordWrap(True)
+        self._phone_status.setObjectName("CardHint")
+        card.add(self._phone_status)
+
+        self._phone_url = QLabel("")
+        self._phone_url.setWordWrap(True)
+        self._phone_url.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._phone_url.setObjectName("mono")
+        card.add(self._phone_url)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._phone_start_button = PrimaryButton("Start service", self._start_phone)
+        row.addWidget(self._phone_start_button)
+        self._phone_stop_button = QPushButton("Stop service")
+        self._phone_stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._phone_stop_button.clicked.connect(self._stop_phone)
+        row.addWidget(self._phone_stop_button)
+        row.addStretch(1)
+        card.add_layout(row)
+
+        hint = QLabel(
+            "Employees join the same Wi-Fi as this computer, scan their "
+            "phone check-in QR, and tap once. Internet is not needed, and "
+            "the service never leaves your local network."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("CardHint")
+        card.add(hint)
+
+        lan = lan_ip()
+        if lan is None:
+            self._phone_lan_warning = QLabel(
+                "No local network connection detected - phones will not be "
+                "able to reach this computer until it joins a network."
+            )
+            self._phone_lan_warning.setWordWrap(True)
+            self._phone_lan_warning.setProperty("role", "warning")
+            card.add(self._phone_lan_warning)
+        self._refresh_phone_status()
+        return card
+
+    def _refresh_phone_status(self) -> None:
+        if not hasattr(self, "_phone_status"):
+            return
+        server = self.context.phone
+        settings = self.context.settings.settings
+        if server.running:
+            self._phone_status.setText(
+                f"Running on port {server.port}. This computer must stay on "
+                "while employees check in."
+            )
+            self._phone_url.setText(f"Check-in base address:\n{server.display_url()}")
+        elif not settings.phone_enabled:
+            self._phone_status.setText(
+                "Phone attendance is disabled. Tick 'Enable phone attendance' "
+                "above, save, then start the service."
+            )
+            self._phone_url.setText("")
+        else:
+            self._phone_status.setText(
+                f"Stopped. It will listen on port {settings.phone_port} once started."
+            )
+            self._phone_url.setText("")
+        self._phone_start_button.setEnabled(not server.running)
+        self._phone_stop_button.setEnabled(server.running)
+
+    def _start_phone(self) -> None:
+        settings = self.context.settings.settings
+        if not settings.phone_enabled:
+            QMessageBox.information(
+                self,
+                "Phone attendance is disabled",
+                "Tick 'Enable phone attendance' and save first.",
+            )
+            return
+        ok, message = self.context.phone.start(settings.phone_port)
+        if not ok:
+            QMessageBox.warning(self, "Could not start", message)
+        self._refresh_phone_status()
+
+    def _stop_phone(self) -> None:
+        self.context.phone.stop()
+        self._refresh_phone_status()
+
+    def _build_sheets_status_card(self) -> QWidget:
+        """Service-account key status and setup shortcut."""
+        from app.services.google_sheets import key_status, sheets_available
+
+        card = Card("Google account link", "")
+        self._sheets_status = QLabel("")
+        self._sheets_status.setWordWrap(True)
+        self._sheets_status.setObjectName("CardHint")
+        card.add(self._sheets_status)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        choose = QPushButton("Choose service account file…")
+        choose.setCursor(Qt.CursorShape.PointingHandCursor)
+        choose.clicked.connect(self._choose_sheets_key)
+        row.addWidget(choose)
+
+        test_btn = QPushButton("Test connection")
+        test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        test_btn.clicked.connect(self._test_sheets_connection)
+        row.addWidget(test_btn)
+        row.addStretch(1)
+        card.add_layout(row)
+
+        hint = QLabel(
+            "Needs the optional sheets packages plus a service-account key "
+            "from Google Cloud (Sheets API enabled), with the spreadsheet "
+            "shared to that account. Full steps are in the README."
+        )
+        hint.setWordWrap(True)
+        hint.setObjectName("CardHint")
+        card.add(hint)
+
+        if not sheets_available():
+            missing = QLabel(
+                "Sheets libraries are not available in this install, so "
+                "uploads are unavailable. From-source installs need: "
+                "pip install -r requirements.txt"
+            )
+            missing.setWordWrap(True)
+            missing.setProperty("role", "warning")
+            card.add(missing)
+        self._refresh_sheets_status()
+        return card
+
+    def _refresh_sheets_status(self) -> None:
+        if not hasattr(self, "_sheets_status"):
+            return
+        from app.services.google_sheets import key_status
+
+        state, detail = key_status(self.context.paths.root)
+        self._sheets_status.setText(detail)
+        self._sheets_status.setProperty(
+            "role", "success" if state == "ok" else "warning"
+        )
+        style = self._sheets_status.style()
+        if style is not None:
+            style.unpolish(self._sheets_status)
+            style.polish(self._sheets_status)
+
+    def _choose_sheets_key(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        from app.services.google_sheets import (
+            GoogleSheetsError,
+            store_service_account_file,
+        )
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose service-account key file",
+            str(Path.home()),
+            "JSON files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            stored = store_service_account_file(path, self.context.paths.root)
+        except GoogleSheetsError as exc:
+            QMessageBox.warning(self, "Key file rejected", exc.message)
+            return
+        self._refresh_sheets_status()
+        QMessageBox.information(
+            self,
+            "Key file saved",
+            f"The service account key was validated and stored.\n\n{stored}",
+        )
+
+    def _test_sheets_connection(self) -> None:
+        from app.services.google_sheets import (
+            GoogleSheetsError,
+            sheets_available,
+            stored_key_path,
+            verify_connection,
+        )
+
+        if not sheets_available():
+            QMessageBox.information(
+                self,
+                "Sheets support not installed",
+                "Google Sheets libraries are not available in this install.",
+            )
+            return
+
+        settings = self.context.settings.settings
+        key_file = stored_key_path(self.context.paths.root)
+        spreadsheet_id = str(
+            self._value_of("sheets_spreadsheet_id")
+            or settings.sheets_spreadsheet_id
+        ).strip()
+
+        if not spreadsheet_id:
+            QMessageBox.information(
+                self,
+                "Missing spreadsheet ID",
+                "Enter a Spreadsheet ID above and try again.",
+            )
+            return
+
+        try:
+            title = verify_connection(key_file, spreadsheet_id)
+        except GoogleSheetsError as exc:
+            QMessageBox.warning(self, "Connection failed", exc.message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Connection successful",
+            f"Successfully connected to Google Sheet:\n\n\"{title}\"",
+        )
 
     # -- values --------------------------------------------------------------
     def _value_of(self, key: str):
@@ -387,8 +617,13 @@ class SettingsPage(QWidget):
         if not changes:
             QMessageBox.information(self, "Nothing to save", "No settings were changed.")
             return
-        labels = "\n".join(f"  • {label}" for label, _old, _new in changes)
-        QMessageBox.information(self, "Settings saved", f"Updated:\n{labels}")
+        extra_lines: list[str] = []
+        if not self.context.settings.settings.phone_enabled:
+            if self.context.phone.running:
+                self.context.phone.stop()
+                extra_lines.append("  • Phone service stopped (feature disabled)")
+        lines = [f"  • {label}" for label, _old, _new in changes] + extra_lines
+        QMessageBox.information(self, "Settings saved", "Updated:\n" + "\n".join(lines))
         self.refresh()
 
     def _reset_defaults(self) -> None:
@@ -418,6 +653,8 @@ class SettingsPage(QWidget):
         )
         self._load_info()
         self._load_backups()
+        self._refresh_phone_status()
+        self._refresh_sheets_status()
 
     def _rebuild_tabs(self) -> None:
         """Recreate every settings tab from the persisted values."""

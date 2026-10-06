@@ -217,6 +217,11 @@ class BackupService:
         _reveal(self.paths.backups_dir)
         return self.paths.backups_dir
 
+    def open_qr_folder(self) -> Path:
+        self.paths.ensure()
+        _reveal(self.paths.qr_dir)
+        return self.paths.qr_dir
+
     def database_info(self) -> dict[str, str]:
         return {
             "database": str(self.paths.database_file),

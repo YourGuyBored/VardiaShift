@@ -48,6 +48,14 @@ jobs:
         run: Compress-Archive -Path dist/Shiftora -DestinationPath dist/${{ matrix.archive }}
         shell: pwsh
 
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          choco install innosetup --no-progress -y
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer/windows/Shiftora.iss
+        shell: pwsh
+
       - name: Tarball (Linux)
         if: runner.os == 'Linux'
         run: tar -czf dist/${{ matrix.archive }} -C dist Shiftora
@@ -57,6 +65,14 @@ jobs:
         with:
           name: ${{ matrix.archive }}
           path: dist/${{ matrix.archive }}
+
+      # Separate step so the Linux job (which has no installer) is unaffected.
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiftora-Setup-Windows-x64
+          path: dist/Shiftora-Setup-Windows-x64.exe
 
   publish:
     name: Publish GitHub release

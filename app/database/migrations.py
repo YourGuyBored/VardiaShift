@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.constants import APP_VERSION
 from app.database.database import Database, utc_now
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS employees (
     position         TEXT NOT NULL DEFAULT '',
     status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
     weekly_goal_hours INTEGER,
+    badge_code       TEXT,
     qr_token         TEXT NOT NULL UNIQUE,
     date_added       TEXT NOT NULL,
     created_at       TEXT NOT NULL,
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS employees (
 
 CREATE INDEX IF NOT EXISTS idx_employees_status ON employees (status);
 CREATE INDEX IF NOT EXISTS idx_employees_name ON employees (full_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_badge
+    ON employees (badge_code COLLATE NOCASE) WHERE badge_code IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS attendance (
     attendance_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +61,7 @@ CREATE TABLE IF NOT EXISTS attendance (
     status           TEXT NOT NULL DEFAULT 'open'
                       CHECK (status IN ('open', 'closed', 'missing')),
     source           TEXT NOT NULL DEFAULT 'qr'
-                      CHECK (source IN ('qr', 'manual', 'auto', 'correction')),
+                      CHECK (source IN ('qr', 'manual', 'auto', 'correction', 'phone')),
     is_corrected     INTEGER NOT NULL DEFAULT 0 CHECK (is_corrected IN (0, 1)),
     note             TEXT NOT NULL DEFAULT '',
     created_at       TEXT NOT NULL,
@@ -124,6 +127,7 @@ CREATE TABLE IF NOT EXISTS scan_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scan_events_created ON scan_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scan_events_token ON scan_events (token_hash);
 """
 
 # Ordered list of (version, [statements]).  Each entry runs exactly once.
@@ -153,6 +157,62 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         [
             # Scans are only "duplicates" when they target the same working day.
             """ALTER TABLE scan_events ADD COLUMN work_date TEXT NOT NULL DEFAULT ''""",
+        ],
+    ),
+    (
+        5,
+        [
+            # Widen the attendance source list ('phone') and guard durations.
+            # SQLite cannot alter a CHECK in place, so the table is rebuilt;
+            # every row is copied over unchanged. No foreign-key juggling is
+            # needed: nothing else references attendance, and copied rows
+            # already satisfy the employee relationship.
+            """CREATE TABLE attendance_new (
+                attendance_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id      INTEGER NOT NULL,
+                work_date        TEXT NOT NULL,
+                time_in          TEXT,
+                time_out         TEXT,
+                duration_minutes INTEGER
+                                 CHECK (duration_minutes IS NULL OR duration_minutes >= 0),
+                status           TEXT NOT NULL DEFAULT 'open'
+                                 CHECK (status IN ('open', 'closed', 'missing')),
+                source           TEXT NOT NULL DEFAULT 'qr'
+                                 CHECK (source IN ('qr', 'manual', 'auto', 'correction', 'phone')),
+                is_corrected     INTEGER NOT NULL DEFAULT 0 CHECK (is_corrected IN (0, 1)),
+                note             TEXT NOT NULL DEFAULT '',
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL,
+                corrected_by     TEXT,
+                FOREIGN KEY (employee_id) REFERENCES employees (employee_id) ON DELETE RESTRICT,
+                UNIQUE (employee_id, work_date)
+            )""",
+            """INSERT INTO attendance_new (
+                attendance_id, employee_id, work_date, time_in, time_out,
+                duration_minutes, status, source, is_corrected, note,
+                created_at, updated_at, corrected_by
+            ) SELECT
+                attendance_id, employee_id, work_date, time_in, time_out,
+                duration_minutes, status, source, is_corrected, note,
+                created_at, updated_at, corrected_by
+            FROM attendance""",
+            """DROP TABLE attendance""",
+            """ALTER TABLE attendance_new RENAME TO attendance""",
+            """CREATE INDEX idx_attendance_date ON attendance (work_date)""",
+            """CREATE INDEX idx_attendance_status ON attendance (status)""",
+            """CREATE INDEX IF NOT EXISTS idx_scan_events_token
+               ON scan_events (token_hash)""",
+        ],
+    ),
+    (
+        6,
+        [
+            # Optional human-typed identifier per employee (badge number, short
+            # code). Nullable so existing rows are untouched; the partial
+            # unique index only constrains rows that actually set one.
+            """ALTER TABLE employees ADD COLUMN badge_code TEXT""",
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_badge
+               ON employees (badge_code COLLATE NOCASE) WHERE badge_code IS NOT NULL""",
         ],
     ),
 ]

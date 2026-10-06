@@ -28,14 +28,22 @@ def test_payload_round_trip_for_each_kind():
 
 def test_payload_has_no_personal_data(context, admin, employee):
     payload = build_payload(QR_EMPLOYEE, employee.qr_token)
-    assert employee.full_name not in payload
-    assert employee.employee_code not in payload
-    assert employee.department not in payload
-    assert employee.position not in payload
+    # Exact composition: prefix, kind, and nothing but the opaque token.
+    # (Substring checks for short fields like department "IT" are not used:
+    # any short string can occur inside a random token by chance.)
     assert payload == f"SHIFTORA1|EMP|{employee.qr_token}"
-    # The token carries no readable personal information.
+    parsed = parse_payload(payload)
+    assert parsed.kind == QR_EMPLOYEE
+    assert parsed.token == employee.qr_token
+    # Full names contain spaces, which tokens can never contain.
+    assert employee.full_name not in payload
+    # The token carries no readable personal information: it is a fixed-length
+    # opaque URL-safe string, not anything derived from the employee.
+    # (Asserting it "contains a digit" would be flaky - a random 24-char
+    # token has roughly a 2% chance of having no digits at all.)
+    assert len(employee.qr_token) == 24
+    assert all(ch.isalnum() or ch in "-_" for ch in employee.qr_token)
     assert employee.qr_token not in employee.full_name
-    assert any(ch.isdigit() for ch in employee.qr_token)
 
 
 def test_payload_prefixes_are_distinct():

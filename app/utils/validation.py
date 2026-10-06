@@ -52,6 +52,27 @@ def validate_employee_code(value: str) -> str:
     return code
 
 
+def validate_badge_code(value: str | None) -> str | None:
+    """Optional human-typed identifier (badge number, short code, nickname).
+
+    No length cap: the value is only typed by hand and shown on screens and
+    printouts — it never goes inside a QR payload (which stays a fixed
+    random token), and SQLite TEXT columns have no length limit. The single
+    restriction is control characters, which would corrupt single-line
+    displays, printed cards, and log lines.
+    """
+    if value is None:
+        return None
+    code = value.strip()
+    if not code:
+        return None
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in code):
+        raise ValidationError(
+            "Custom code cannot contain control characters.", "badge_code"
+        )
+    return code
+
+
 def validate_full_name(value: str) -> str:
     name = require_text(value, "Full name", max_length=120, min_length=2)
     if name.isdigit():

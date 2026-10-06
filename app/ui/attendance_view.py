@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from app.models.attendance import ATTENDANCE_MISSING, ATTENDANCE_OPEN
 from app.ui import theme
+from app.ui.window_sizing import fit_to_screen
 from app.ui.widgets import (
     Card,
     EmptyState,
@@ -38,7 +39,8 @@ from app.ui.widgets import (
 )
 
 HISTORY_COLUMNS = ["Date", "Time In", "Time Out", "Hours", "Status"]
-TODAY_COLUMNS = ["Employee", "Employee ID", "Time In", "Time Out", "Hours", "Status"]
+TODAY_COLUMNS = ["Employee", "Employee ID", "Time In", "Time Out", "Hours", "Status", "Source"]
+OPEN_COLUMNS = ["Employee", "Date", "Time In", "Elapsed", "Status"]
 AUDIT_COLUMNS = ["When", "Administrator", "Action", "Old value", "New value", "Reason"]
 
 
@@ -58,7 +60,7 @@ class CorrectionDialog(QDialog):
         self.employee = employee
         self.record = record
         self.setWindowTitle("Correct attendance")
-        self.setMinimumWidth(520)
+        fit_to_screen(self, (520, 0))
         clock = context.clock
 
         layout = QVBoxLayout(self)
@@ -393,7 +395,7 @@ class AttendancePage(QWidget):
         note.setObjectName("CardHint")
         layout.addWidget(note)
 
-        self._open_table = self._make_table(HISTORY_COLUMNS)
+        self._open_table = self._make_table(OPEN_COLUMNS)
         layout.addWidget(self._open_table, 1)
 
         self._open_empty = EmptyState(
@@ -600,6 +602,10 @@ class AttendancePage(QWidget):
             badge_layout.addStretch(1)
             self._today_table.setCellWidget(index, 5, holder)
 
+            source_item = QTableWidgetItem(self.context.attendance.source_label(record.source))
+            source_item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
+            self._today_table.setItem(index, 6, source_item)
+
         self._today_table.setVisible(bool(records))
         self._today_empty.setVisible(not records)
 
@@ -707,12 +713,15 @@ class AttendancePage(QWidget):
                 f"{record.full_name} ({record.employee_code})",
                 clock.format_date(record.work_date),
                 clock.format_time(record.time_in),
-                "-",
                 clock.format_duration(elapsed),
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
+                if column == 3:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 self._open_table.setItem(index, column, item)
             badge = StatusBadge(ATTENDANCE_MISSING, "Needs closing")
             holder = QWidget()

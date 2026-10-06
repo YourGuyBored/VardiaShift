@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+import threading
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable
@@ -39,6 +42,21 @@ ERR_UNKNOWN_EMPLOYEE = "unknown_employee"
 ERR_DUPLICATE = "duplicate_scan"
 ERR_INVALID_TIME = "invalid_time"
 ERR_SESSION_CONFLICT = "session_conflict"
+
+VALID_SOURCES = ("qr", "manual", "auto", "correction", "phone")
+SOURCE_LABELS = {
+    "qr": "Desktop",
+    "manual": "Desktop",
+    "auto": "Desktop",
+    "correction": "Admin correction",
+    "phone": "Phone",
+}
+
+# Note on timestamps: every untrusted entry point (kiosk scans, USB wedge
+# input, phone check-ins) stamps with the server's own clock at handling
+# time, so a client with a wrong clock cannot inject future times.
+# Explicit moments only come from deliberate admin corrections, which are
+# audit-trailed.
 
 
 class ClockError(Exception):
@@ -100,9 +118,41 @@ class AttendanceService:
         # Injectable clock.  Production uses the configured time zone; tests and a
         # future cloud-sync layer can freeze or advance "now" deterministically.
         self._now_provider = now_provider
+        # One reentrant lock per employee serialises concurrent clock attempts
+        # for the same person (kiosk + phone at once). Different employees
+        # never block each other. The UNIQUE(employee_id, work_date)
+        # constraint remains as the final backstop.
+        self._clock_locks: dict[int, threading.RLock] = defaultdict(threading.RLock)
+        self._locks_guard = threading.Lock()
 
     def set_now_provider(self, provider: Callable[[], datetime] | None) -> None:
         self._now_provider = provider
+
+    def _lock_for(self, employee_id: int) -> threading.RLock:
+        with self._locks_guard:
+            return self._clock_locks[employee_id]
+
+    @staticmethod
+    def check_source(source: str) -> str:
+        """Normalise an attendance source, rejecting anything unknown."""
+        if source in VALID_SOURCES:
+            return source
+        raise ClockError(
+            f"Unknown attendance source: {source!r}.",
+            ERR_INVALID_TIME,
+            "Cannot record",
+        )
+
+    @staticmethod
+    def source_label(source: str) -> str:
+        return SOURCE_LABELS.get(source, source.replace("_", " ").title())
+
+    def resolve_auto_kind(self, employee: Employee) -> str:
+        """Which action a single scan means: out when working, in otherwise."""
+        status = self.current_status(employee)
+        if status in (ATTENDANCE_OPEN, ATTENDANCE_MISSING):
+            return QR_TIME_OUT
+        return QR_TIME_IN
 
     # -- convenience ---------------------------------------------------------
     @property
@@ -211,6 +261,7 @@ class AttendanceService:
         note: str = "",
     ) -> ClockResult:
         moment = moment or self.now()
+        source = self.check_source(source)
         work_date = moment.strftime("%Y-%m-%d")
         employee = self._ensure_clockable(employee)
 
@@ -251,13 +302,32 @@ class AttendanceService:
         flag_note = self._early_flag_note(moment)
         combined_note = " • ".join(part for part in (flag_note, note) if part)
 
-        attendance_id = self.repos.attendance.open_session(
-            employee_id=employee.employee_id,
-            work_date=work_date,
-            time_in=TimeUtils.to_iso(moment),
-            source=source,
-            note=combined_note,
-        )
+        try:
+            attendance_id = self.repos.attendance.open_session(
+                employee_id=employee.employee_id,
+                work_date=work_date,
+                time_in=TimeUtils.to_iso(moment),
+                source=source,
+                note=combined_note,
+            )
+        except sqlite3.IntegrityError as exc:
+            # A concurrent request won the race for today's row. Re-read and
+            # report the real state instead of leaking a database error.
+            raced = self.repos.attendance.get_for_date(employee.employee_id, work_date)
+            if raced is not None:
+                if raced.time_out:
+                    raise ClockError(
+                        f"{employee.full_name} already completed today's session.",
+                        ERR_ALREADY_TIMED_OUT,
+                        "Already Timed Out",
+                    ) from exc
+                raise ClockError(
+                    f"{employee.full_name} is already clocked in. Time In: "
+                    f"{self.clock.format_time(raced.time_in)}.",
+                    ERR_ALREADY_TIMED_IN,
+                    "Already Timed In",
+                ) from exc
+            raise
         week = self.week_progress(employee, self.clock.week_bounds())
         return ClockResult(
             success=True,
@@ -297,6 +367,7 @@ class AttendanceService:
         note: str = "",
     ) -> ClockResult:
         moment = moment or self.now()
+        source = self.check_source(source)
         work_date = moment.strftime("%Y-%m-%d")
         employee = self._ensure_clockable(employee)
 
@@ -330,7 +401,9 @@ class AttendanceService:
             )
 
         minutes = TimeUtils.duration_minutes(record.time_in, moment)
-        self.repos.attendance.close_session(record.attendance_id, TimeUtils.to_iso(moment), minutes, note)
+        self.repos.attendance.close_session(
+            record.attendance_id, TimeUtils.to_iso(moment), minutes, note, source
+        )
         week = self.week_progress(employee, self.clock.week_bounds())
         return ClockResult(
             success=True,
@@ -355,22 +428,42 @@ class AttendanceService:
         action_kind: str,
         payload_text: str,
         moment: datetime | None = None,
+        source: str = "qr",
     ) -> ClockResult:
-        """Validate duplicate scans then perform the requested clock action."""
+        """Validate duplicate scans then perform the requested clock action.
+
+        The whole operation holds the employee's clock lock, so a kiosk scan
+        and a phone request arriving at the same instant cannot interleave.
+        """
         kind = action_kind or ""
         moment = moment or self.now()
+        source = self.check_source(source)
         work_date = moment.strftime("%Y-%m-%d")
-        self._reject_duplicate_scan(payload_text, kind, moment, employee.employee_id)
+        with self._lock_for(employee.employee_id):
+            self._reject_duplicate_scan(payload_text, kind, moment, employee.employee_id)
 
-        if kind == QR_TIME_IN:
-            result = self.time_in(employee, moment)
-        elif kind == QR_TIME_OUT:
-            result = self.time_out(employee, moment)
-        else:
-            raise ClockError("Unknown action code.", ERR_INVALID_TIME, "Unknown QR Code")
+            if kind == QR_TIME_IN:
+                result = self.time_in(employee, moment, source=source)
+            elif kind == QR_TIME_OUT:
+                result = self.time_out(employee, moment, source=source)
+            else:
+                raise ClockError("Unknown action code.", ERR_INVALID_TIME, "Unknown QR Code")
 
-        self._log_scan(payload_text, kind, employee.employee_id, True, result.kind, work_date)
-        return result
+            self._log_scan(payload_text, kind, employee.employee_id, True, result.kind, work_date)
+            return result
+
+    def record_auto_scan(
+        self,
+        employee: Employee,
+        payload_text: str,
+        moment: datetime | None = None,
+        source: str = "qr",
+    ) -> ClockResult:
+        """Single-scan clocking: out when working, in otherwise."""
+        moment = moment or self.now()
+        with self._lock_for(employee.employee_id):
+            kind = self.resolve_auto_kind(employee)
+            return self.record_scan(employee, kind, payload_text, moment, source)
 
     def note_failed_scan(self, payload_text: str, kind: str, reason: str) -> None:
         self._log_scan(payload_text, kind, None, False, reason[:160], self.today().isoformat())
@@ -542,6 +635,7 @@ class AttendanceService:
                     time_in=TimeUtils.parse(record.time_in) if record else None,
                     time_out=TimeUtils.parse(record.time_out) if record else None,
                     missing=missing_flag,
+                    source=record.source if record is not None else "",
                 )
             )
 
@@ -607,7 +701,7 @@ class AttendanceService:
                 "(missing time-out rule)"
             )
             self.repos.attendance.close_session(
-                record.attendance_id, TimeUtils.to_iso(limit), minutes, note
+                record.attendance_id, TimeUtils.to_iso(limit), minutes, note, "auto"
             )
             self.repos.audit.log(
                 ACTION_AUTO_CLOSE,

@@ -213,3 +213,60 @@ def test_reject_on_partial_failure_keeps_cache_consistent(context, admin):
     with pytest.raises(ValueError):
         context.settings.set_many({"organization_name": "X", "daily_max_hours": 99}, "admin")
     assert context.settings.settings.organization_name == "Acme"
+
+# -- phone & single-scan settings --------------------------------------------
+def test_phone_settings_seed_with_sane_defaults(context):
+    settings = context.settings.settings
+    assert settings.phone_enabled is False
+    assert settings.phone_port == 8123
+    assert settings.phone_auto_start is False
+    assert settings.auto_clock_mode is False
+
+
+def test_phone_port_validation(context, admin):
+    assert context.settings.set("phone_port", 9000, "admin")
+    assert context.settings.settings.phone_port == 9000
+    with pytest.raises(ValueError):
+        context.settings.set("phone_port", 80, "admin")
+    with pytest.raises(ValueError):
+        context.settings.set("phone_port", 70000, "admin")
+    assert context.settings.settings.phone_port == 9000
+
+
+def test_auto_clock_mode_toggle(context, admin):
+    assert context.settings.settings.auto_clock_mode is False
+    context.settings.set("auto_clock_mode", True, "admin")
+    assert context.settings.settings.auto_clock_mode is True
+
+
+# -- missing system time-zone database (Windows without tzdata) --------------
+def test_app_survives_missing_tz_database(monkeypatch):
+    """Simulate a machine with no IANA database: UTC must still work."""
+    import zoneinfo
+
+    from app.utils import time_utils
+    from app.utils.time_utils import TimeUtils, is_valid_timezone, resolve_zone
+
+    def no_database(name):
+        raise zoneinfo.ZoneInfoNotFoundError(f"No time zone found with key {name}")
+
+    monkeypatch.setattr(time_utils, "ZoneInfo", no_database)
+    assert time_utils.tz_database_available() is False
+
+    assert is_valid_timezone("UTC") is True
+    assert is_valid_timezone("Mars/Olympus") is False
+
+    clock = TimeUtils(timezone="UTC")
+    assert clock.timezone_name == "UTC"
+    assert clock.now() is not None
+    assert clock.today() is not None
+    assert clock.utc_now_iso() != ""
+    assert resolve_zone("UTC").utcoffset(None).total_seconds() == 0
+
+
+def test_named_zones_still_validate_when_database_present():
+    from app.utils.time_utils import is_valid_timezone, tz_database_available
+
+    assert tz_database_available() is True
+    assert is_valid_timezone("Asia/Manila") is True
+    assert is_valid_timezone("Mars/Olympus") is False
