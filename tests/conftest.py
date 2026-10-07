@@ -1,4 +1,4 @@
-"""Pytest fixtures: every test runs against a throwaway Shiftora database."""
+"""Pytest fixtures: every test runs against a throwaway VardiaShift database."""
 
 from __future__ import annotations
 
@@ -63,8 +63,8 @@ if str(ROOT) not in sys.path:
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):
     """Redirect the app data directory so tests never touch a real install."""
-    data_dir = tmp_path / "shiftora-data"
-    monkeypatch.setenv("SHIFTORA_DATA_DIR", str(data_dir))
+    data_dir = tmp_path / "vardiashift-data"
+    monkeypatch.setenv("VARDIASHIFT_DATA_DIR", str(data_dir))
     from app.utils import paths as paths_module
 
     paths_module._cache = None

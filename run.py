@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Shiftora launcher for development.
+"""VardiaShift launcher for development.
 
     python run.py
 
-PyInstaller builds use ``Shiftora.spec`` which calls
+PyInstaller builds use ``VardiaShift.spec`` which calls
 :func:`app.main.main` directly, so this file is only needed when running from
 a source checkout.
 """
@@ -25,7 +25,7 @@ def main() -> int:
         missing = getattr(exc, "name", "") or ""
         if missing.startswith("PySide6"):
             print(
-                "Shiftora needs PySide6 to run.\n\n"
+                "VardiaShift needs PySide6 to run.\n\n"
                 "Install the dependencies first:\n"
                 "    python -m pip install -r requirements.txt\n"
                 f"\nDetails: {exc}"

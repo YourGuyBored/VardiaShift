@@ -121,7 +121,7 @@ class BackupService:
         return entries
 
     def verify_backup(self, path: Path | str) -> tuple[bool, str]:
-        """Open a backup read-only and confirm it is a usable Shiftora database."""
+        """Open a backup read-only and confirm it is a usable VardiaShift database."""
         source = Path(path)
         if not source.is_file():
             return False, "File not found."
@@ -145,7 +145,7 @@ class BackupService:
         required = {"employees", "attendance", "admins", "settings"}
         missing = required - names
         if missing:
-            return False, f"Not a Shiftora backup. Missing table(s): {', '.join(sorted(missing))}"
+            return False, f"Not a VardiaShift backup. Missing table(s): {', '.join(sorted(missing))}"
         return True, "Backup is valid."
 
     # -- restore -------------------------------------------------------------

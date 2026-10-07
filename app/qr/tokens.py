@@ -6,6 +6,11 @@ Payloads look like::
     SHIFTORA1|IN|<token>
     SHIFTORA1|OUT|<token>
 
+The ``SHIFTORA1`` prefix is a wire format, deliberately kept unchanged across
+the VardiaShift rename: every QR card already printed in the field encodes
+it, so altering the string would silently break all of them. It is an
+internal identifier and never shown to an employee.
+
 Only an opaque, randomly generated token travels inside the code - never a
 name, employee ID or any other personal data.  The server-side (local
 database) lookup turns the token back into an employee.
@@ -33,7 +38,7 @@ _PAYLOAD_RE = re.compile(rf"^{PROTOCOL}\|([A-Z]{{2,4}})\|([A-Za-z0-9_\-]{{16,64}
 
 
 class InvalidPayload(ValueError):
-    """The scanned text is not a valid Shiftora QR payload."""
+    """The scanned text is not a valid VardiaShift QR payload."""
 
 
 @dataclass(frozen=True)
@@ -68,11 +73,11 @@ def parse_payload(raw: str) -> QRPayload:
     text = raw.strip()
     match = _PAYLOAD_RE.match(text)
     if not match:
-        raise InvalidPayload("This is not a Shiftora QR code.")
+        raise InvalidPayload("This is not a VardiaShift QR code.")
     code, token = match.group(1), match.group(2)
     kind = CODE_KINDS.get(code)
     if kind is None:
-        raise InvalidPayload("This is not a Shiftora QR code.")
+        raise InvalidPayload("This is not a VardiaShift QR code.")
     return QRPayload(kind=kind, token=token)
 
 
@@ -88,7 +93,7 @@ def new_token() -> str:
     return generate_token(24)
 
 
-def looks_like_shiftora(raw: str) -> bool:
+def looks_like_vardiashift(raw: str) -> bool:
     return bool(raw) and raw.strip().startswith(PROTOCOL + SEP)
 
 
@@ -99,7 +104,7 @@ __all__ = [
     "PROTOCOL",
     "QRPayload",
     "build_payload",
-    "looks_like_shiftora",
+    "looks_like_vardiashift",
     "new_token",
     "parse_payload",
     "try_parse",

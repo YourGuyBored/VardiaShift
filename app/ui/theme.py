@@ -473,7 +473,7 @@ QMessageBox QLabel {{
 
 
 def apply_theme(app) -> None:
-    """Install the Shiftora stylesheet on a ``QApplication``."""
+    """Install the VardiaShift stylesheet on a ``QApplication``."""
     from PySide6.QtGui import QColor, QPalette
     from PySide6.QtWidgets import QApplication
 

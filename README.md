@@ -1,6 +1,6 @@
 <div align="center">
 
-# Shiftora
+# VardiaShift
 
 **Standalone desktop employee time-in / time-out & attendance management**
 
@@ -8,22 +8,22 @@ No servers. No cloud. No Python required to use it.
 
 Download it, open it, scan QR codes, track hours.
 
-[![tests](https://github.com/YourGuyBored/Shiftora/actions/workflows/tests.yml/badge.svg)](https://github.com/YourGuyBored/Shiftora/actions/workflows/tests.yml)
-[![release](https://img.shields.io/badge/release-download%20%E2%86%93-blue)](https://github.com/YourGuyBored/Shiftora/releases/latest)
+[![tests](https://github.com/YourGuyBored/VardiaShift/actions/workflows/tests.yml/badge.svg)](https://github.com/YourGuyBored/VardiaShift/actions/workflows/tests.yml)
+[![release](https://img.shields.io/badge/release-download%20%E2%86%93-blue)](https://github.com/YourGuyBored/VardiaShift/releases/latest)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-469%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-425%20passing-brightgreen)
 
-![Shiftora dashboard](assets/screenshots/dashboard.png)
+![VardiaShift dashboard](assets/screenshots/dashboard.png)
 
 </div>
 
 ---
 
-## What is Shiftora?
+## What is VardiaShift?
 
-Shiftora is a **standalone desktop application** for small teams and offices
+VardiaShift is a **standalone desktop application** for small teams and offices
 that need simple, reliable attendance tracking:
 
 * Employees scan a **personal QR code**, then a **TIME IN** / **TIME OUT** code.
@@ -42,10 +42,10 @@ You do **not** need Python or any technical setup.
 
 ### Windows - the installer (recommended)
 
-1. Go to **[github.com/YourGuyBored/Shiftora/releases/latest](https://github.com/YourGuyBored/Shiftora/releases/latest)**.
+1. Go to **[github.com/YourGuyBored/VardiaShift/releases/latest](https://github.com/YourGuyBored/VardiaShift/releases/latest)**.
    That page always shows the newest version, so a bookmarked link keeps
    working after future releases.
-2. Download **`Shiftora-Setup-Windows-x64.exe`**.
+2. Download **`VardiaShift-Setup-Windows-x64.exe`**.
 3. Double-click it and follow the installer.
 
 The installer adds a Start Menu entry, offers a desktop shortcut
@@ -53,7 +53,7 @@ The installer adds a Start Menu entry, offers a desktop shortcut
 **Settings → Apps → Installed apps**. The app itself is a single folder, so
 removing it never touches your attendance data.
 
-> **Windows may show a blue "Windows protected your PC" screen.** Shiftora is
+> **Windows may show a blue "Windows protected your PC" screen.** VardiaShift is
 > not code-signed, which costs a few dollars a year and requires a real
 > business address. Choose **More info → Run anyway**. The app is open source
 > and you can read every line of it in this repository.
@@ -64,8 +64,8 @@ On the same releases page you will also find:
 
 | File | Use it on | How to run |
 |---|---|---|
-| `Shiftora-Windows-x64.zip` | Windows | Extract, then double-click **`Shiftora.exe`** |
-| `Shiftora-Linux-x64.tar.gz` | Linux | Extract, then run **`Shiftora`** |
+| `VardiaShift-Windows-x64.zip` | Windows | Extract, then double-click **`VardiaShift.exe`** |
+| `VardiaShift-Linux-x64.tar.gz` | Linux | Extract, then run **`VardiaShift`** |
 
 Nothing is written into the folder you extract to, so you can delete it to
 "uninstall".
@@ -86,15 +86,15 @@ python run.py
 In every case the app starts and creates its own data folder automatically.
 
 > Your data lives in a per-user folder, never next to the executable:
-> `%LOCALAPPDATA%\Shiftora` on Windows,
-> `~/Library/Application Support/Shiftora` on macOS,
-> `~/.local/share/Shiftora` on Linux.
+> `%LOCALAPPDATA%\VardiaShift` on Windows,
+> `~/Library/Application Support/VardiaShift` on macOS,
+> `~/.local/share/VardiaShift` on Linux.
 
 ---
 
 ## First launch
 
-The very first time Shiftora opens, it detects that no database exists,
+The very first time VardiaShift opens, it detects that no database exists,
 creates one, and shows the **first-time setup** screen:
 
 ```text
@@ -212,10 +212,10 @@ sessions.
 
 Leaving the kiosk requires the administrator password (Exit kiosk button
 or the window close button) - employees cannot reach the admin screens from
-it. Quitting Shiftora itself always works without a password.
+it. Quitting VardiaShift itself always works without a password.
 
 **Single-scan mode (optional):** enable *Single-scan clocking* in
-Settings → Attendance and one employee scan is enough - Shiftora records
+Settings → Attendance and one employee scan is enough - VardiaShift records
 time-in when the employee is not working, and time-out when they are.
 
 **Arriving:**
@@ -274,12 +274,12 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 Employees can also clock in and out from their phone browser - nothing to
 install, no accounts, no typing:
 
-1. In Shiftora, open **Settings → Phone Attendance**, tick
+1. In VardiaShift, open **Settings → Phone Attendance**, tick
    *Enable phone attendance*, save, and press **Start service**. The panel
    shows the exact base address for phones.
 2. On the **QR Codes** page, select an employee and press
    **Phone clock-in / out QR**. Print it or show it on screen.
-3. The employee joins the **same Wi-Fi** as the Shiftora computer and points
+3. The employee joins the **same Wi-Fi** as the VardiaShift computer and points
    their phone camera at the code. The QR holds a full web address, so the
    page opens by itself in the browser - no typing, no tapping a link.
 4. Their personal page shows whether they are currently clocked in and offers
@@ -289,7 +289,7 @@ install, no accounts, no typing:
 
 Both buttons are always shown, so an employee never has to guess. Each works
 only once per page load, and pressing the wrong one is refused with a plain
-message rather than recording the opposite action - Shiftora still enforces
+message rather than recording the opposite action - VardiaShift still enforces
 one session per day, so a second time-in or a time-out with no open session
 is rejected either way.
 
@@ -300,11 +300,11 @@ Settings stops a running service immediately.
 Details worth knowing:
 
 * The QR encodes this computer's LAN address, so it only works while the
-  Shiftora computer is on the same network. If the address changes (a
+  VardiaShift computer is on the same network. If the address changes (a
   different Wi-Fi, or a DHCP renewal) the printed code stops working and
   needs reprinting - the status panel in Settings shows the current address.
 * Printing a phone QR needs a network address. If the computer is not on a
-  network yet, Shiftora says so instead of printing a code that would scan
+  network yet, VardiaShift says so instead of printing a code that would scan
   fine and then open nothing.
 * The link carries the same revocable token as the employee QR - regenerating
   the employee QR invalidates old phone links too.
@@ -357,11 +357,11 @@ in against the restored data.
 
 Any report can be uploaded as a new tab into a Google spreadsheet, so
 attendance data sits next to anything else you track there. This is fully
-optional: without it Shiftora works exactly as before, offline.
+optional: without it VardiaShift works exactly as before, offline.
 
 One-time setup (about five minutes, needs internet once):
 
-1. Nothing to install: the Sheets libraries ship inside Shiftora
+1. Nothing to install: the Sheets libraries ship inside VardiaShift
    (desktop and packaged builds alike).
 2. In [Google Cloud Console](https://console.cloud.google.com/), create a
    project, enable the **Google Sheets API**, then create a **service
@@ -369,7 +369,7 @@ One-time setup (about five minutes, needs internet once):
 3. Open your spreadsheet and **Share** it with the service account's email
    address (Editor role). The address is inside the JSON file as
    `client_email`.
-4. In Shiftora: **Settings → Google Sheets** → *Choose service account
+4. In VardiaShift: **Settings → Google Sheets** → *Choose service account
    file…*, pick the JSON key, tick *Enable Google Sheets export*, paste the
    **Spreadsheet ID** (the long part of the sheet URL between `/d/` and
    `/edit`), and save.
@@ -384,15 +384,15 @@ handling as the CSV/XLSX exports.
 > **Treat that JSON key like a password.** Anyone holding it can edit any
 > spreadsheet it has been shared with. Keep it out of version control
 > (`.gitignore` already blocks it) and delete your downloaded copy once
-> Shiftora has imported it - you can always issue a new key from Cloud.
+> VardiaShift has imported it - you can always issue a new key from Cloud.
 
 ---
 
 ## Developer installation
 
 ```bash
-git clone https://github.com/YourGuyBored/Shiftora.git
-cd shiftora
+git clone https://github.com/YourGuyBored/VardiaShift.git
+cd vardiashift
 python -m venv .venv
 # Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -405,7 +405,7 @@ Optional extras:
 pip install -r requirements-optional.txt   # webcam scanning (Google Sheets ships built-in)
 ```
 
-Run the test suite (469 tests: services, QR, reports, backup, phone, sheets, GUI):
+Run the test suite (425 tests: services, QR, reports, backup, phone, sheets, GUI):
 
 ```bash
 python -m pytest tests/ -q
@@ -418,51 +418,6 @@ display:
 ```bash
 QT_QPA_PLATFORM=xcb python -m pytest tests/test_ui.py
 ```
-
-### Committing and publishing (VS Code)
-
-Open the folder in VS Code, then **Terminal → Run Task**. There are four:
-
-| Task | What it does |
-|---|---|
-| **Commit: test, stage, ask, commit (never pushes)** | The main one. Also bound to Ctrl+Shift+B. |
-| **Tests: run full suite** | Runs pytest only. Stages and commits nothing. |
-| **Git: check for secrets and junk before committing** | Previews exactly what would be staged. |
-| **Git: push to origin** | Separate on purpose, so a commit never publishes by accident. |
-
-The commit task runs, in order:
-
-1. the **full test suite** - it stops immediately if anything fails;
-2. `scripts/precommit_check.py` - see below;
-3. `git add -A`;
-4. asks for a commit message, then commits.
-
-Nothing is staged or committed if step 1 or 2 fails. It never pushes.
-
-All four tasks invoke the project's own `.venv`, so they work whether or not
-a terminal has the virtual environment activated, and on Windows and Linux
-alike.
-
-#### The pre-commit guard
-
-`scripts/precommit_check.py` refuses to let these into a public repository:
-
-- **SQLite databases** and their `-wal`/`-shm`/`-journal` files - these hold
-  real employee and attendance data;
-- private keys, certificates, `.env` files;
-- virtual environments, `dist/`, `build/`, `__pycache__` and other caches;
-- staged text containing private keys, Google / AWS / GitHub / Slack /
-  Stripe credentials, or a database connection string.
-
-Test files are exempt from the content scan, because Shiftora's own tests
-hold a fake PEM on purpose. Run it on its own any time:
-
-```bash
-python scripts/precommit_check.py --list   # show what would be staged
-```
-
-If a real secret was already committed, deleting it is not enough - rotate
-the key.
 
 ---
 
@@ -484,7 +439,7 @@ Or directly:
 
 ```bash
 pip install -r requirements.txt pyinstaller
-pyinstaller --noconfirm Shiftora.spec
+pyinstaller --noconfirm VardiaShift.spec
 ```
 
 The distributable appears under `dist/`:
@@ -492,15 +447,15 @@ The distributable appears under `dist/`:
 ```text
 GitHub
    ↓  Releases
-Shiftora-Windows-x64.zip
+VardiaShift-Windows-x64.zip
    ↓  Download & Extract
-Shiftora.exe
+VardiaShift.exe
    ↓  Run (no Python needed)
 ```
 
 Tagged pushes (`v*`) automatically build the packages, compile the Windows
-installer (`installer/windows/Shiftora.iss`), and publish a GitHub release
-with `Shiftora-Setup-Windows-x64.exe` plus the portable archives, via
+installer (`installer/windows/VardiaShift.iss`), and publish a GitHub release
+with `VardiaShift-Setup-Windows-x64.exe` plus the portable archives, via
 `.github/workflows/release.yml`. Every push also runs the full test suite on
 Windows and Linux via `.github/workflows/tests.yml`.
 
@@ -509,7 +464,7 @@ Windows and Linux via `.github/workflows/tests.yml`.
 ## Project structure
 
 ```text
-shiftora/
+vardiashift/
 ├── app/
 │   ├── main.py               # entry point, setup→login→main state machine
 │   ├── context.py            # composition root (database, services, QR, phone)
@@ -522,14 +477,13 @@ shiftora/
 │   ├── ui/                   # setup, login, dashboard, employees, attendance,
 │   │                         # kiosk, QR management, reports, settings, admin
 │   └── utils/                # app-data paths, time utils, validation
-├── tests/                    # 469 pytest tests (services, QR, reports, DB, UI)
-├── scripts/                  # one-click commit + pre-commit secret guard
+├── tests/                    # pytest suite
 ├── installer/windows/        # Inno Setup installer script
 ├── assets/                   # application icon
 ├── data/                     # placeholder (runtime data lives in the OS data dir)
 ├── run.py                    # `python run.py` launcher
 ├── setup_windows.bat         # double-click install from source (Windows)
-├── Shiftora.spec             # PyInstaller specification
+├── VardiaShift.spec             # PyInstaller specification
 ├── build_windows.bat / build_linux.sh
 ├── requirements*.txt / pyproject.toml
 └── README.md / CHANGELOG.md / LICENSE
@@ -560,7 +514,7 @@ without rewriting screens or queries.
 
 ## Offline-first
 
-After installation Shiftora works with **no internet connection**. The only
+After installation VardiaShift works with **no internet connection**. The only
 things that need the network are downloading the app itself and (optionally)
 receiving updates.
 

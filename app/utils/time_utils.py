@@ -83,7 +83,7 @@ def resolve_zone(name: str):
     """Return a tzinfo for ``name`` without ever raising.
 
     Windows ships no IANA time-zone database, so ``ZoneInfo`` fails there
-    unless the ``tzdata`` package is installed (it is a Shiftora dependency
+    unless the ``tzdata`` package is installed (it is a VardiaShift dependency
     on Windows). Anything unresolvable falls back to fixed UTC, so the
     application keeps working with a degraded zone instead of crashing.
     """

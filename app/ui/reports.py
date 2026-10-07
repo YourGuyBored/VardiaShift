@@ -367,7 +367,7 @@ class ReportsPage(QWidget):
             QMessageBox.information(
                 self,
                 "Sheets support not installed",
-                "This copy of Shiftora was built without the Sheets "
+                "This copy of VardiaShift was built without the Sheets "
                 "libraries. Use a release build or install requirements.txt "
                 "from source.",
             )

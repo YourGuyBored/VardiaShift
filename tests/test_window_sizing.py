@@ -2,7 +2,7 @@
 
 A window whose minimum size exceeds the available screen area cannot be
 moved, resized or minimized by the window manager. These tests pin that every
-top-level Shiftora window stays inside the screen.
+top-level VardiaShift window stays inside the screen.
 """
 
 from __future__ import annotations

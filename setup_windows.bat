@@ -1,11 +1,11 @@
 @echo off
 REM =====================================================================
-REM  Shiftora - Windows first-time setup (run from source)
+REM  VardiaShift - Windows first-time setup (run from source)
 REM
 REM  Double-click this file. It creates a virtual environment, installs
-REM  everything Shiftora needs (including the Windows time-zone database
+REM  everything VardiaShift needs (including the Windows time-zone database
 REM  that prevents the "No time zone found with key UTC" crash), and puts
-REM  a Shiftora shortcut on your desktop.
+REM  a VardiaShift shortcut on your desktop.
 REM
 REM  Requirements: Python 3.10+ from https://www.python.org/downloads/
 REM  (tick "Add python.exe to PATH" during its install).
@@ -53,9 +53,9 @@ if errorlevel 1 (
 )
 
 echo [4/4] Creating desktop shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath('Desktop'),'Shiftora.lnk')); $s.TargetPath='%~dp0.venv\Scripts\pythonw.exe'; $s.Arguments='\"%~dp0run.py\"'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0assets\icon.ico'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath('Desktop'),'VardiaShift.lnk')); $s.TargetPath='%~dp0.venv\Scripts\pythonw.exe'; $s.Arguments='\"%~dp0run.py\"'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0assets\icon.ico'; $s.Save()"
 if errorlevel 1 (
-    echo [NOTE] Could not create the desktop shortcut, but Shiftora itself
+    echo [NOTE] Could not create the desktop shortcut, but VardiaShift itself
     echo is ready. Start it with: .venv\Scripts\python.exe run.py
 ) else (
     echo Desktop shortcut created.
@@ -63,7 +63,7 @@ if errorlevel 1 (
 
 echo.
 echo =====================================================================
-echo  SETUP COMPLETE. Double-click the Shiftora desktop shortcut to start.
+echo  SETUP COMPLETE. Double-click the VardiaShift desktop shortcut to start.
 echo  On first launch, create your administrator account when asked.
 echo =====================================================================
 pause

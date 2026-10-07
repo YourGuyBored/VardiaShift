@@ -1,4 +1,4 @@
-"""Reusable presentation widgets shared by every Shiftora screen."""
+"""Reusable presentation widgets shared by every VardiaShift screen."""
 
 from __future__ import annotations
 

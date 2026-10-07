@@ -1,9 +1,9 @@
 """Local-network phone attendance.
 
 A tiny HTTP service (standard library only) that lets employees clock in from
-their phone browser while on the same Wi-Fi/LAN as the Shiftora computer. No
+their phone browser while on the same Wi-Fi/LAN as the VardiaShift computer. No
 internet, no accounts, no app install: the employee scans a check-in QR that
-opens a personal URL, and Shiftora records time-in or time-out through the
+opens a personal URL, and VardiaShift records time-in or time-out through the
 exact same service layer as the desktop kiosk.
 
 Security notes:
@@ -171,7 +171,7 @@ class PhoneServer:
             server.daemon_threads = True
             thread = threading.Thread(
                 target=server.serve_forever,
-                name="shiftora-phone-server",
+                name="vardiashift-phone-server",
                 kwargs={"poll_interval": 0.2},
                 daemon=True,
             )
@@ -256,7 +256,7 @@ def _make_handler(context, state: _CheckinState):
     """Build a request-handler class bound to live services (no Qt inside)."""
 
     class CheckinHandler(BaseHTTPRequestHandler):
-        server_version = "ShiftoraPhone/1.0"
+        server_version = "VardiaShiftPhone/1.0"
 
         # -- helpers ---------------------------------------------------------
         def _client(self) -> str:
@@ -324,7 +324,7 @@ def _make_handler(context, state: _CheckinState):
                 403,
                 "Phone attendance is off",
                 "<h1 class='err'>Phone attendance is turned off</h1>"
-                "<p>Ask an administrator to enable it in Shiftora's settings.</p>",
+                "<p>Ask an administrator to enable it in VardiaShift's settings.</p>",
             )
 
         # -- routes ----------------------------------------------------------
@@ -340,9 +340,9 @@ def _make_handler(context, state: _CheckinState):
                 org = html.escape(context.settings.settings.organization_name)
                 self._send(
                     200,
-                    "Shiftora check-in",
+                    "VardiaShift check-in",
                     f"<h1>{org} check-in</h1>"
-                    "<p>Scan your personal Shiftora QR code with your phone "
+                    "<p>Scan your personal VardiaShift QR code with your phone "
                     "camera to open your page, then tap <b>Time in</b> or "
                     "<b>Time out</b>.</p>",
                 )

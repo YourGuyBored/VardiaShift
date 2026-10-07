@@ -110,7 +110,7 @@ def test_employee_code_alone_is_not_accepted_in_the_two_step_flow(flow, frozen):
     """require_employee_qr is on, so an employee ID is not a valid payload."""
     context = flow["context"]
     assert context.settings.settings.require_employee_qr is True
-    with pytest.raises(ValueError, match="not a Shiftora QR code"):
+    with pytest.raises(ValueError, match="not a VardiaShift QR code"):
         from app.qr.tokens import parse_payload
 
         parse_payload("EMP-001")

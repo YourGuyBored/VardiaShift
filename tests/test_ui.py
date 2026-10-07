@@ -564,7 +564,7 @@ def test_settings_reset_defaults(context, qt_app, admin_session, monkeypatch):
     context.settings.set("organization_name", "Acme", "admin")
     page = SettingsPage(context)
     page._reset_defaults()
-    assert context.settings.settings.organization_name == "Shiftora"
+    assert context.settings.settings.organization_name == "VardiaShift"
 
 
 def test_settings_page_backup_and_restore(context, qt_app, team, admin_session, monkeypatch):
@@ -1290,7 +1290,7 @@ def test_settings_sheets_key_picker_stores_valid_file(
         "project_id": "demo",
         "private_key_id": "abc",
         "private_key": "-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----\n",
-        "client_email": "shiftora@demo.iam.gserviceaccount.com",
+        "client_email": "vardiashift@demo.iam.gserviceaccount.com",
         "client_id": "123",
     }), encoding="utf-8")
     monkeypatch.setattr(

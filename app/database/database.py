@@ -69,7 +69,7 @@ class Database:
             conn = self._connection
             if conn.in_transaction:
                 # Nested use: reuse the outer transaction (no savepoints needed
-                # because Shiftora services are not re-entrant on writes).
+                # because VardiaShift services are not re-entrant on writes).
                 yield conn
                 return
             conn.execute("BEGIN IMMEDIATE")

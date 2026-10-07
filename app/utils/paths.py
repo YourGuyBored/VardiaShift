@@ -4,11 +4,11 @@ The application never stores user data next to the executable (which is
 read-only inside a PyInstaller bundle and inside ``_MEIPASS``).  Instead it
 resolves a writable, per-user data directory:
 
-* Windows      -> ``%LOCALAPPDATA%\\Shiftora`` (Roaming is a fallback)
-* macOS        -> ``~/Library/Application Support/Shiftora``
-* Linux/BSD    -> ``$XDG_DATA_HOME/Shiftora`` (``~/.local/share/Shiftora``)
+* Windows      -> ``%LOCALAPPDATA%\\VardiaShift`` (Roaming is a fallback)
+* macOS        -> ``~/Library/Application Support/VardiaShift``
+* Linux/BSD    -> ``$XDG_DATA_HOME/VardiaShift`` (``~/.local/share/VardiaShift``)
 
-The location can be overridden with the ``SHIFTORA_DATA_DIR`` environment
+The location can be overridden with the ``VARDIASHIFT_DATA_DIR`` environment
 variable which is what the test-suite uses to get a throwaway sandbox.
 """
 
@@ -19,8 +19,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_DIR_NAME = "Shiftora"
-DATA_DIR_ENV_VAR = "SHIFTORA_DATA_DIR"
+APP_DIR_NAME = "VardiaShift"
+DATA_DIR_ENV_VAR = "VARDIASHIFT_DATA_DIR"
 
 
 def is_frozen() -> bool:
@@ -43,7 +43,7 @@ class AppPaths:
     # -- direct children -----------------------------------------------------
     @property
     def database_file(self) -> Path:
-        return self.root / "shiftora.db"
+        return self.root / "vardiashift.db"
 
     @property
     def backups_dir(self) -> Path:

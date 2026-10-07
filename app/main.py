@@ -11,7 +11,7 @@ from pathlib import Path
 from app.constants import APP_NAME, APP_VERSION, APP_TAGLINE
 from app.context import ApplicationContext, get_context, reset_context
 
-LOG_FILE_NAME = "shiftora.log"
+LOG_FILE_NAME = "vardiashift.log"
 
 
 def _configure_logging(paths) -> None:
@@ -31,7 +31,7 @@ def _configure_logging(paths) -> None:
 
 
 def _excepthook(exc_type, exc_value, exc_tb) -> None:  # pragma: no cover
-    logging.getLogger("shiftora").error(
+    logging.getLogger("vardiashift").error(
         "Unhandled exception", exc_info=(exc_type, exc_value, exc_tb)
     )
     try:
@@ -271,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = app_paths()
     _configure_logging(paths)
 
-    logging.getLogger("shiftora").info(
+    logging.getLogger("vardiashift").info(
         "%s %s starting (frozen=%s, data=%s)",
         APP_NAME,
         APP_VERSION,
@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if paths.database_file.exists():
             shutil.rmtree(paths.root)
-            logging.getLogger("shiftora").info("Demo data cleared")
+            logging.getLogger("vardiashift").info("Demo data cleared")
 
     sys.excepthook = _excepthook
 

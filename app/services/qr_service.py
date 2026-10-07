@@ -23,7 +23,7 @@ from app.utils.paths import AppPaths
 
 
 class QRCodeManager:
-    """Creates, rotates and renders the three kinds of Shiftora QR code."""
+    """Creates, rotates and renders the three kinds of VardiaShift QR code."""
 
     def __init__(
         self,
@@ -190,7 +190,7 @@ class QRCodeManager:
 
         Scanning this URL with a phone camera opens it directly in the
         browser, because the QR holds a full ``http://`` address rather than
-        a Shiftora token.
+        a VardiaShift token.
         """
         from app.phone.server import CHECKIN_PATH_PREFIX, phone_url_for_phone
 

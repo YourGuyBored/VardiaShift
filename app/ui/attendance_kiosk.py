@@ -663,7 +663,7 @@ class KioskExitDialog(QDialog):
         info = QLabel(
             f"Signed in as {self._username}.\n"
             "Enter the administrator password to leave the kiosk and "
-            "return to Shiftora."
+            "return to VardiaShift."
         )
         info.setWordWrap(True)
         info.setObjectName("CardHint")

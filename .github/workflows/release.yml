@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            archive: Shiftora-Windows-x64.zip
+            archive: VardiaShift-Windows-x64.zip
           - os: ubuntu-latest
-            archive: Shiftora-Linux-x64.tar.gz
+            archive: VardiaShift-Linux-x64.tar.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -41,11 +41,11 @@ jobs:
           pip install -r requirements.txt pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller --noconfirm Shiftora.spec
+        run: pyinstaller --noconfirm VardiaShift.spec
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/Shiftora -DestinationPath dist/${{ matrix.archive }}
+        run: Compress-Archive -Path dist/VardiaShift -DestinationPath dist/${{ matrix.archive }}
         shell: pwsh
 
       - name: Build Windows installer
@@ -53,12 +53,12 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           $version = "${{ github.ref_name }}".TrimStart("v")
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer/windows/Shiftora.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer/windows/VardiaShift.iss
         shell: pwsh
 
       - name: Tarball (Linux)
         if: runner.os == 'Linux'
-        run: tar -czf dist/${{ matrix.archive }} -C dist Shiftora
+        run: tar -czf dist/${{ matrix.archive }} -C dist VardiaShift
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
@@ -71,8 +71,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: Shiftora-Setup-Windows-x64
-          path: dist/Shiftora-Setup-Windows-x64.exe
+          name: VardiaShift-Setup-Windows-x64
+          path: dist/VardiaShift-Setup-Windows-x64.exe
 
   publish:
     name: Publish GitHub release

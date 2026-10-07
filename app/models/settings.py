@@ -157,7 +157,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
         "auto_close_missing_timeout", "Auto-close missing time-outs", TYPE_BOOL, False,
         GROUP_ATTENDANCE,
-        "When enabled, Shiftora closes forgotten sessions after the threshold below "
+        "When enabled, VardiaShift closes forgotten sessions after the threshold below "
         "and writes an audit entry. Never silent.",
     ),
     SettingSpec(
@@ -188,7 +188,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     ),
     SettingSpec(
         "auto_clock_mode", "Single-scan clocking", TYPE_BOOL, False, GROUP_ATTENDANCE,
-        "When enabled, one employee scan is enough: Shiftora records time-in "
+        "When enabled, one employee scan is enough: VardiaShift records time-in "
         "when the employee is not working, and time-out when they are.",
     ),
     # -- Kiosk ---------------------------------------------------------------
@@ -228,7 +228,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
         "phone_auto_start", "Start phone service with the app", TYPE_BOOL, False,
         GROUP_PHONE,
-        "Start listening automatically when Shiftora opens (only if phone "
+        "Start listening automatically when VardiaShift opens (only if phone "
         "attendance is enabled).",
     ),
     # -- Google Sheets export (optional integration) -------------------------

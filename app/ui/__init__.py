@@ -1,4 +1,4 @@
-"""PySide6 user interface for Shiftora."""
+"""PySide6 user interface for VardiaShift."""
 
 from app.ui.theme import STYLESHEET, apply_theme, variant
 

@@ -10,7 +10,7 @@ from app.constants import QR_EMPLOYEE, QR_TIME_IN, QR_TIME_OUT
 from app.qr.tokens import (
     InvalidPayload,
     build_payload,
-    looks_like_shiftora,
+    looks_like_vardiashift,
     new_token,
     parse_payload,
     try_parse,
@@ -68,7 +68,7 @@ def test_kind_label():
         "SHIFTORA1|IN",
         "SHIFTORA1|IN|short",
         "SHIFTORA1|XXX|" + "a" * 24,
-        "SHIFTORA2|IN|" + "a" * 24,
+        "VARDIASHIFT2|IN|" + "a" * 24,
         "SHIFTORA1|IN|" + "a" * 24 + "|extra",
     ],
 )
@@ -85,10 +85,10 @@ def test_build_payload_requires_token():
         build_payload("unknown_kind", "a" * 24)
 
 
-def test_looks_like_shiftora():
-    assert looks_like_shiftora(build_payload(QR_TIME_IN, "c" * 24))
-    assert not looks_like_shiftora("random text")
-    assert not looks_like_shiftora("")
+def test_looks_like_vardiashift():
+    assert looks_like_vardiashift(build_payload(QR_TIME_IN, "c" * 24))
+    assert not looks_like_vardiashift("random text")
+    assert not looks_like_vardiashift("")
 
 
 # -- tokens ------------------------------------------------------------------

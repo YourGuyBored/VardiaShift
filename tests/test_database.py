@@ -165,7 +165,7 @@ def test_verify_backup_rejects_foreign_sqlite(context, admin, tmp_path):
         connection.execute("CREATE TABLE unrelated (id INTEGER)")
     ok, detail = context.backups.verify_backup(foreign)
     assert not ok
-    assert "Shiftora" in detail or "table" in detail
+    assert "VardiaShift" in detail or "table" in detail
 
 
 def test_verify_backup_rejects_missing_file(context, admin, tmp_path):
@@ -248,7 +248,7 @@ def test_database_info_summary(context, admin, employee):
     info = context.backups.database_info()
     assert info["employees"] == "1"
     assert info["admins"] == "1"
-    assert "shiftora.db" in info["database"]
+    assert "vardiashift.db" in info["database"]
 
 
 # -- housekeeping ------------------------------------------------------------

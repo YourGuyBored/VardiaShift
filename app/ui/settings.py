@@ -493,7 +493,7 @@ class SettingsPage(QWidget):
         layout.addWidget(backups, 1)
 
         danger = QLabel(
-            "Restoring replaces all current data. Shiftora always saves a safety copy "
+            "Restoring replaces all current data. VardiaShift always saves a safety copy "
             "of the current database first, and both actions are written to the audit log."
         )
         danger.setWordWrap(True)
@@ -530,8 +530,8 @@ class SettingsPage(QWidget):
 
     def _restore_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose a Shiftora backup", str(self.context.backups.paths.backups_dir),
-            "Shiftora backup (*.db);;All files (*)",
+            self, "Choose a VardiaShift backup", str(self.context.backups.paths.backups_dir),
+            "VardiaShift backup (*.db);;All files (*)",
         )
         if path:
             self._confirm_restore(Path(path))
@@ -542,7 +542,7 @@ class SettingsPage(QWidget):
             QMessageBox.critical(
                 self,
                 "Cannot restore",
-                f"{path.name} is not a usable Shiftora backup.\n\n{detail}",
+                f"{path.name} is not a usable VardiaShift backup.\n\n{detail}",
             )
             return
 

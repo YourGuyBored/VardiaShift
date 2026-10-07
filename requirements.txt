@@ -1,4 +1,4 @@
-# Shiftora runtime dependencies.
+# VardiaShift runtime dependencies.
 #
 # Install with:
 #     python -m pip install -r requirements.txt

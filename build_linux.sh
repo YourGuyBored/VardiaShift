@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =====================================================================
-# Shiftora - Linux build script
+# VardiaShift - Linux build script
 #
-# Builds a distributable folder:  dist/Shiftora/Shiftora
+# Builds a distributable folder:  dist/VardiaShift/VardiaShift
 #
 # Requirements: Python 3.10+.
 # Usage:
@@ -27,17 +27,17 @@ echo "[2/4] Installing dependencies..."
 python -m pip install --upgrade pip
 pip install -r requirements.txt pyinstaller
 
-echo "[3/4] Building Shiftora with PyInstaller..."
-pyinstaller --noconfirm Shiftora.spec
+echo "[3/4] Building VardiaShift with PyInstaller..."
+pyinstaller --noconfirm VardiaShift.spec
 
 echo "[4/4] Packaging release archive..."
-rm -f "dist/Shiftora-Linux-x64.tar.gz"
-tar -czf "dist/Shiftora-Linux-x64.tar.gz" -C dist Shiftora
+rm -f "dist/VardiaShift-Linux-x64.tar.gz"
+tar -czf "dist/VardiaShift-Linux-x64.tar.gz" -C dist VardiaShift
 
 echo
 echo "====================================================================="
 echo " BUILD COMPLETE"
 echo
-echo " Executable folder : dist/Shiftora/Shiftora"
-echo " Release archive   : dist/Shiftora-Linux-x64.tar.gz"
+echo " Executable folder : dist/VardiaShift/VardiaShift"
+echo " Release archive   : dist/VardiaShift-Linux-x64.tar.gz"
 echo "====================================================================="

@@ -1,4 +1,4 @@
-"""Screen-aware window sizing, shared by every top-level Shiftora window.
+"""Screen-aware window sizing, shared by every top-level VardiaShift window.
 
 The problem this solves: a window whose minimum size exceeds the available
 screen area cannot be moved, resized or minimized by the window manager. On

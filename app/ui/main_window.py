@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             "Sign out",
-            "Sign out of Shiftora?\n\nAny unsaved form will be discarded.",
+            "Sign out of VardiaShift?\n\nAny unsaved form will be discarded.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

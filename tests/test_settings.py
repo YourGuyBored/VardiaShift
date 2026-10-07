@@ -16,7 +16,7 @@ def test_settings_are_seeded_on_first_launch(context):
 
 def test_defaults(context):
     settings = context.settings.settings
-    assert settings.organization_name == "Shiftora"
+    assert settings.organization_name == "VardiaShift"
     assert settings.default_weekly_goal_hours == 30
     assert settings.default_weekly_goal_minutes == 1800
     assert settings.week_start_day == 0
@@ -145,7 +145,7 @@ def test_reset_defaults(context, admin):
     context.settings.set("organization_name", "Acme", "admin")
     context.settings.set("default_weekly_goal_hours", 40, "admin")
     context.settings.reset_defaults("admin")
-    assert context.settings.settings.organization_name == "Shiftora"
+    assert context.settings.settings.organization_name == "VardiaShift"
     assert context.settings.settings.default_weekly_goal_hours == 30
 
 
@@ -171,7 +171,7 @@ def test_settings_diff(context, admin):
     after = context.settings.settings
     diff = before.diff(after)
     assert "organization_name" in diff
-    assert diff["organization_name"] == ("Shiftora", "Acme")
+    assert diff["organization_name"] == ("VardiaShift", "Acme")
 
 
 def test_specs_for_group():

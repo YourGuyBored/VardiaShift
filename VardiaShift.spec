@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build specification for Shiftora.
+"""PyInstaller build specification for VardiaShift.
 
 Used by build_windows.bat / build_linux.sh and by the GitHub release workflow:
 
-    pyinstaller --noconfirm Shiftora.spec
+    pyinstaller --noconfirm VardiaShift.spec
 
 NOTE: EXE() arguments are intentionally positional (pyz, scripts, binaries,
 zipfiles, datas) - this is the canonical one-directory form. A keyword-style
@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(SPECPATH)  # noqa: F821 - provided by PyInstaller
-APP_NAME = "Shiftora"
+APP_NAME = "VardiaShift"
 
 block_cipher = None
 

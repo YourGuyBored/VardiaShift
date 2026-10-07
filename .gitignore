@@ -27,7 +27,7 @@ dist/
 htmlcov/
 .tox/
 
-# Shiftora runtime data (real attendance databases live outside the repo,
+# VardiaShift runtime data (real attendance databases live outside the repo,
 # but never commit one by accident)
 data/*.db
 data/*.db-*
@@ -43,7 +43,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
-!.vscode/tasks.json
 .idea/
 *.swp
 *~

@@ -372,11 +372,11 @@ class QRManagementPage(QWidget):
             "    1. Employee holds their personal QR code.\n"
             "    2. Scan it with the kiosk (webcam or USB reader).\n"
             "    3. Scan the TIME IN code posted at the entrance.\n"
-            "    4. Shiftora confirms: 'TIME IN SUCCESSFUL'.\n\n"
+            "    4. VardiaShift confirms: 'TIME IN SUCCESSFUL'.\n\n"
             "STEP 2 - Employee leaves\n"
             "    1. Employee scans their personal QR code again.\n"
             "    2. Scan the TIME OUT code.\n"
-            "    3. Shiftora shows the hours worked today.\n\n"
+            "    3. VardiaShift shows the hours worked today.\n\n"
             "WHY TWO CODES?\n"
             "The public TIME IN / TIME OUT codes carry no employee information, so\n"
             "nobody can clock in on someone else's behalf. Both codes must be\n"
@@ -462,7 +462,7 @@ class QRManagementPage(QWidget):
 
     def _download_current(self) -> None:
         kind = self._kind_box.currentData() or QR_TIME_IN
-        default = str(self.context.qr.qr_dir() / f"shiftora_{kind}.png")
+        default = str(self.context.qr.qr_dir() / f"vardiashift_{kind}.png")
         path, _ = QFileDialog.getSaveFileName(self, "Download QR code", default, "PNG images (*.png)")
         if not path:
             return
@@ -577,7 +577,7 @@ class QRManagementPage(QWidget):
         if employee is None:
             QMessageBox.information(self, "No selection", "Select an employee first.")
             return
-        default = str(self.context.qr.qr_dir() / f"shiftora_{employee.employee_code}.png")
+        default = str(self.context.qr.qr_dir() / f"vardiashift_{employee.employee_code}.png")
         path, _ = QFileDialog.getSaveFileName(self, "Download QR code", default, "PNG images (*.png)")
         if not path:
             return

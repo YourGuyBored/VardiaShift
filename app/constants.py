@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-APP_NAME = "Shiftora"
-APP_SLUG = "shiftora"
+APP_NAME = "VardiaShift"
+APP_SLUG = "vardiashift"
 APP_VERSION = "1.0.0"
 APP_TAGLINE = "Employee Time-In / Time-Out & Attendance"
 
-ORG_NAME_DEFAULT = "Shiftora"
+ORG_NAME_DEFAULT = "VardiaShift"
 WEEKLY_GOAL_PRESETS = [20, 25, 30, 35, 40]
 DEFAULT_WEEKLY_GOAL_HOURS = 30
 

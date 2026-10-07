@@ -5,7 +5,7 @@ can live next to anything else the organisation keeps in Google Sheets.
 
 This is deliberately optional and offline-safe:
 
-* The client libraries ship with Shiftora, but every entry point still
+* The client libraries ship with VardiaShift, but every entry point still
   degrades gracefully when they are missing instead of crashing, and all
   local features keep working.
 * Authentication uses a Google Cloud **service account** key file chosen by

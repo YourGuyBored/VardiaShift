@@ -25,7 +25,7 @@ def fake_key(tmp_path, **overrides) -> object:
         "project_id": "demo",
         "private_key_id": "abc",
         "private_key": "-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----\n",
-        "client_email": "shiftora@demo.iam.gserviceaccount.com",
+        "client_email": "vardiashift@demo.iam.gserviceaccount.com",
         "client_id": "123",
     }
     payload.update(overrides)
