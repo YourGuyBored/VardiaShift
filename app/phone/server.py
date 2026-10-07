@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import os
 import secrets
 import socket
 import threading
@@ -130,12 +131,39 @@ class _CheckinState:
             del self._throttled_until[address]
 
 
+class _Server(ThreadingHTTPServer):
+    """The HTTP server, with correct port-sharing behaviour per platform.
+
+    ``http.server`` sets ``allow_reuse_address = True``, which asks the OS for
+    ``SO_REUSEADDR``. That is what we want on Linux and macOS: it lets the
+    service stop and start again on the same port without waiting out TIME_WAIT.
+
+    On Windows the semantics are the opposite. There, ``SO_REUSEADDR`` lets a
+    *second* socket bind to a port that is already being listened on, so two
+    Shiftora instances would both report success on the same port and requests
+    would be split unpredictably between them. ``SO_EXCLUSIVEADDRUSE`` is the
+    Windows option that actually prevents another process from sharing the
+    port, so it is set instead, before the bind.
+    """
+
+    #: Linux/macOS keep SO_REUSEADDR; Windows must not.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            # Must be set before bind() to have any effect. Combine with
+            # allow_reuse_address = False above: the two options conflict, and
+            # only the exclusive one may be present here.
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class PhoneServer:
     """Owns the HTTP server thread. Qt never runs inside the handler."""
 
     def __init__(self, context) -> None:
         self._context = context
-        self._server: ThreadingHTTPServer | None = None
+        self._server: _Server | None = None
         self._thread: threading.Thread | None = None
         self._state = _CheckinState()
         self._port = 0
@@ -165,7 +193,11 @@ class PhoneServer:
                 return True, f"Already running at {self.display_url()}."
             handler = _make_handler(self._context, self._state)
             try:
-                server = ThreadingHTTPServer(("0.0.0.0", port), handler)
+                # TCPServer.__init__ opens the socket and, if bind or
+                # activate fails, calls server_close() before re-raising. So
+                # reaching the except below means no descriptor is left open,
+                # and self._server was never assigned, so running stays False.
+                server = _Server(("0.0.0.0", port), handler)
             except OSError as exc:
                 return False, f"Could not listen on port {port}: {exc}."
             server.daemon_threads = True
