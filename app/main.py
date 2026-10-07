@@ -351,6 +351,7 @@ class Application:
         if self.window is None:
             self.window = MainWindow(self.context)
             self._apply_window_icon(self.window)
+            self.window.sidebar.open_kiosk.connect(self.open_kiosk)
             self._pages = build_pages(self.window, self.context)
             self.window.signed_out.connect(self._on_signed_out)
             # Remembered size/position, re-clamped to this screen. Only

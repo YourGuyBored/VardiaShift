@@ -1012,27 +1012,25 @@ def test_first_launch_signs_admin_in_and_lands_on_dashboard(context, qt_app):
 
 def test_kiosk_close_is_not_reentrant(context, qt_app, admin_session, team):
     """Closing the kiosk twice (closeEvent + slot) must not crash."""
-    from app.main import build_pages
-    from app.ui.main_window import MainWindow
+    from app.main import Application, build_pages
 
-    window = MainWindow(context)
-    build_pages(window, context)
+    app = Application(context)
+    app.create_qt_app()
     try:
-        window.open_kiosk()
+        app.open_kiosk()
         qt_app.processEvents()
-        assert window._kiosk is not None
+        assert app.kiosk is not None
         # Simulate what happens after the password gate passes: the close
         # event emits `finished`, and the shell also runs its cleanup.
-        window._kiosk._exit_allowed = True
-        window._kiosk.close()
-        window._on_kiosk_finished()
+        app.kiosk._exit_allowed = True
+        app.kiosk.close()
+        app._on_kiosk_finished()
         qt_app.processEvents()
-        window._on_kiosk_finished()  # second call must be a harmless no-op
+        app._on_kiosk_finished()  # second call must be a harmless no-op
         qt_app.processEvents()
-        assert window._kiosk is None
-        assert window.isVisible()
+        assert app.kiosk is None
     finally:
-        window.close()
+        app.close_kiosk()
 
 
 def test_logout_returns_to_login_with_message(context, qt_app, admin_session):

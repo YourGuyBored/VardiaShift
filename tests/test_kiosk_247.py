@@ -39,3 +39,22 @@ def test_finished_kiosk_is_cleaned_up(context, qt_app):
     app.kiosk.close()
     app._on_kiosk_finished()
     assert app.kiosk is None
+
+
+def test_sidebar_kiosk_button_reaches_the_app_host(context, qt_app, admin):
+    from app.main import Application
+    context.authentication.authenticate("admin", "Sup3rSecret!")
+    app = Application(context)
+    app.create_qt_app()
+    try:
+        app._show_main_window()
+        app.window.sidebar.open_kiosk.emit()
+        qt_app.processEvents()
+        assert app.kiosk is not None
+        assert not hasattr(app.window, "open_kiosk")
+    finally:
+        app.close_kiosk()
+        if app.window is not None:
+            app.window.close()
+            app.window.deleteLater()
+            app.window = None

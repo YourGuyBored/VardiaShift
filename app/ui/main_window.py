@@ -145,7 +145,6 @@ class MainWindow(QMainWindow):
             admin.display_name if admin else "admin",
         )
         self.sidebar.navigate.connect(self.show_page)
-        self.sidebar.open_kiosk.connect(self.open_kiosk)
         self.sidebar.logout.connect(self._confirm_logout)
         root.addWidget(self.sidebar)
 
@@ -154,9 +153,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._pages: dict[str, QWidget] = {}
-        self._kiosk = None
         self._current_key = "dashboard"
-        self._pre_kiosk_state = False
 
         self._idle_timer = QTimer(self)
         self._idle_timer.setInterval(30_000)
@@ -197,42 +194,6 @@ class MainWindow(QMainWindow):
         if callable(refresh):
             refresh()
 
-    # -- kiosk ---------------------------------------------------------------
-    def open_kiosk(self) -> None:
-        if self._kiosk is None:
-            from app.ui.attendance_kiosk import KioskWindow
-
-            self._kiosk = KioskWindow(self.context)
-            self._kiosk.finished.connect(self._on_kiosk_finished)
-        self._kiosk.show_kiosk()
-        # Remember the pre-kiosk state: the kiosk covers the screen, but an
-        # admin who had the window maximized should get it back maximized
-        # rather than snapping to some arbitrary restored size.
-        self._pre_kiosk_state = (
-            self.isMaximized() or self.isFullScreen(),
-        )
-        self.showMinimized()
-
-    def _on_kiosk_finished(self) -> None:
-        # Guard against re-entrancy: closing the kiosk emits `finished`,
-        # which would otherwise recurse into this slot.
-        kiosk, self._kiosk = self._kiosk, None
-        if kiosk is not None:
-            try:
-                kiosk.finished.disconnect(self._on_kiosk_finished)
-            except (TypeError, RuntimeError):
-                pass
-            kiosk.force_close()
-            kiosk.deleteLater()
-        if getattr(self, "_pre_kiosk_state", False):
-            self.showMaximized()
-        else:
-            self.showNormal()
-        self._pre_kiosk_state = False
-        self.raise_()
-        self.activateWindow()
-        self.refresh_current()
-
     # -- session -------------------------------------------------------------
     def _check_auto_logout(self) -> None:
         minutes = self.context.settings.settings.auto_logout_minutes
@@ -259,25 +220,13 @@ class MainWindow(QMainWindow):
         # matter which path got us here.
         if self.context.authentication.is_signed_in():
             self.context.authentication.logout("Signed out")
-        self._close_kiosk_silently()
         self.close()
         self.signed_out.emit(message)
-
-    def _close_kiosk_silently(self) -> None:
-        """Drop the kiosk without the password gate (shutdown/logout only)."""
-        kiosk, self._kiosk = self._kiosk, None
-        if kiosk is not None:
-            try:
-                kiosk.finished.disconnect(self._on_kiosk_finished)
-            except (TypeError, RuntimeError):
-                pass
-            kiosk.force_close()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         # Quitting the application must never trap anyone behind the kiosk
         # password gate.
         save_window_geometry(self, "main")
-        self._close_kiosk_silently()
         try:
             self.context.phone.stop()
         except Exception:
