@@ -224,13 +224,10 @@ class MainWindow(QMainWindow):
         self.signed_out.emit(message)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        # Quitting the application must never trap anyone behind the kiosk
-        # password gate.
+        # The admin shell is disposable now: the kiosk and the phone service
+        # are owned by the Application and survive this window closing. Real
+        # shutdown stops them together in `Application.shutdown`.
         save_window_geometry(self, "main")
-        try:
-            self.context.phone.stop()
-        except Exception:
-            pass
         event.accept()
 
 

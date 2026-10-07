@@ -397,6 +397,20 @@ class Application:
         self._show_login()
 
     def shutdown(self) -> None:
+        # The one place that stops everything: the kiosk and the phone run
+        # without an admin session, so only a real quit may end them.
+        try:
+            self.close_kiosk()
+        except Exception:
+            logging.getLogger("vardiashift").debug(
+                "Kiosk would not close on shutdown", exc_info=True
+            )
+        try:
+            self.context.phone.stop()
+        except Exception:
+            logging.getLogger("vardiashift").debug(
+                "Phone service would not stop on shutdown", exc_info=True
+            )
         try:
             if self.qt_app is not None:
                 self.qt_app.quit()
