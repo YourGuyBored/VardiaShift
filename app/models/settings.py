@@ -25,6 +25,7 @@ GROUP_KIOSK = "Attendance Kiosk"
 GROUP_PHONE = "Phone Attendance"
 GROUP_SHEETS = "Google Sheets"
 GROUP_SECURITY = "Security"
+GROUP_ADVANCED = "Advanced"
 
 TYPE_TEXT = "text"
 TYPE_INT = "int"
@@ -147,7 +148,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         suffix="min",
     ),
     SettingSpec(
-        "grace_period_minutes", "Grace period (minutes)", TYPE_INT, 10, GROUP_ATTENDANCE,
+        "grace_period_minutes", "Grace period (minutes)", TYPE_INT, 10, GROUP_ADVANCED,
         "Extra minutes after a session's expected end before it is flagged as a "
         "missing time-out.",
         minimum=0,
@@ -170,7 +171,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     ),
     SettingSpec(
         "duplicate_scan_window_seconds", "Duplicate scan window (seconds)", TYPE_INT, 8,
-        GROUP_ATTENDANCE,
+        GROUP_ADVANCED,
         "Identical scans inside this window are ignored.",
         minimum=0,
         maximum=300,
@@ -220,7 +221,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "network. No internet, UPnP, or cloud relay involved.",
     ),
     SettingSpec(
-        "phone_port", "Phone service port", TYPE_INT, 8123, GROUP_PHONE,
+        "phone_port", "Phone service port", TYPE_INT, 8123, GROUP_ADVANCED,
         "Port the local phone service listens on. Use 1024-65535.",
         minimum=1024,
         maximum=65535,
@@ -252,7 +253,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         suffix="min",
     ),
     SettingSpec(
-        "audit_retention_days", "Audit log retention (days)", TYPE_INT, 0, GROUP_SECURITY,
+        "audit_retention_days", "Audit log retention (days)", TYPE_INT, 0, GROUP_ADVANCED,
         "0 keeps audit entries forever.",
         minimum=0,
         maximum=3650,
@@ -269,6 +270,7 @@ GROUPS: tuple[str, ...] = (
     GROUP_PHONE,
     GROUP_SHEETS,
     GROUP_SECURITY,
+    GROUP_ADVANCED,
 )
 
 
@@ -285,16 +287,24 @@ class AppSettings:
 
     # -- generic access ------------------------------------------------------
     def get(self, key: str, default: Any = None) -> Any:
+        """Read a setting.
+
+        A key with no declared spec is still readable: structured values such
+        as the saved report templates are stored without one. Returning the
+        default for those would make a value that was persisted look as though
+        it had never been saved.
+        """
+        if key in self.values:
+            return self.values[key]
         spec = SPEC_BY_KEY.get(key)
         if spec is None:
             return default
-        if key not in self.values:
-            self.values[key] = spec.default
+        self.values[key] = spec.default
         return self.values[key]
 
     def set(self, key: str, value: Any) -> None:
-        if key in SPEC_BY_KEY:
-            self.values[key] = SPEC_BY_KEY[key].coerce(value)
+        spec = SPEC_BY_KEY.get(key)
+        self.values[key] = spec.coerce(value) if spec else value
 
     def to_dict(self) -> dict[str, Any]:
         return {spec.key: self.get(spec.key) for spec in SETTING_SPECS}

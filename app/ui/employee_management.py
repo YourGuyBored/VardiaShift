@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -23,7 +26,13 @@ from PySide6.QtWidgets import (
 
 from app.constants import WEEKLY_GOAL_PRESETS
 from app.services.employee_service import EmployeeServiceError
+from app.services.report_import import (
+    apply_employee_import,
+    employee_sample_csv,
+    plan_employee_import,
+)
 from app.ui import theme
+from app.ui.report_dialogs import ImportPreviewDialog, pick_spreadsheet
 from app.ui.window_sizing import fit_to_screen
 from app.ui.widgets import (
     ActiveBadge,
@@ -343,7 +352,56 @@ class EmployeePage(QWidget):
         regen.clicked.connect(self._regenerate_qr)
         row.addWidget(regen)
 
+        self._import_button = QPushButton("Import from file")
+        self._import_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._import_button.setToolTip("Add or update employees from a CSV or XLSX file")
+        self._import_button.clicked.connect(self._import_file)
+        row.addWidget(self._import_button)
+
+        sample = QPushButton("Sample file")
+        sample.setCursor(Qt.CursorShape.PointingHandCursor)
+        sample.setToolTip("Save a CSV you can fill in and import")
+        sample.clicked.connect(self._save_sample_file)
+        row.addWidget(sample)
+
         return row
+
+    # -- import --------------------------------------------------------------
+    def _save_sample_file(self) -> None:
+        default = str(self.context.backups.exports_dir() / "employee-sample.csv")
+        path, _ = QFileDialog.getSaveFileName(self, "Sample file", default, "CSV files (*.csv)")
+        if not path:
+            return
+        Path(path).write_text(employee_sample_csv(), encoding="utf-8")
+        QMessageBox.information(self, "Sample saved", f"Saved to:\n{path}")
+
+    def _import_file(self) -> None:
+        path = pick_spreadsheet(self, "Import employees")
+        if path is None:
+            return
+        try:
+            plan, rows = plan_employee_import(self.context, path)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Could not read the file", str(exc))
+            return
+
+        dialog = ImportPreviewDialog(
+            f"Import employees from {path.name}",
+            plan.counts,
+            plan.rows,
+            plan.warnings,
+            plan.errors,
+            self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        added, updated = apply_employee_import(
+            self.context, rows, self.context.require_admin()
+        )
+        QMessageBox.information(
+            self, "Import finished", f"{added} added, {updated} updated."
+        )
+        self.refresh()
 
     # -- interaction ---------------------------------------------------------
     def _on_search(self, text: str) -> None:

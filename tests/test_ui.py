@@ -499,6 +499,253 @@ def test_reports_page_exports_xlsx(context, qt_app, team, tmp_path, monkeypatch)
     assert target.is_file() and target.stat().st_size > 3000
 
 
+def test_reports_page_lists_the_builtin_templates(context, qt_app, team):
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    names = [page._template_box.itemText(i) for i in range(page._template_box.count())]
+    assert "Payroll sheet" in names
+
+
+def test_reports_page_export_follows_the_chosen_template(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    index = page._template_box.findData("Compact (id and hours only)")
+    page._template_box.setCurrentIndex(index)
+    target = tmp_path / "compact.csv"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+    )
+    page._export_csv()
+    header = target.read_text(encoding="utf-8-sig").splitlines()[0]
+    assert "Full Name" not in header
+
+
+def test_reports_page_duplicates_a_template(context, qt_app, team, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    page._template_box.setCurrentIndex(page._template_box.findData("Payroll sheet"))
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Payroll copy", True))
+    )
+    page._duplicate_template()
+
+    assert page._template_box.currentData() == "Payroll copy"
+    saved = context.settings.settings.get("report_templates")
+    assert "Payroll copy" in saved
+
+
+def test_reports_page_refuses_a_duplicate_template_name(context, qt_app, team, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    page._template_box.setCurrentIndex(page._template_box.findData("Payroll sheet"))
+    before = page._template_box.count()
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Payroll sheet", True))
+    )
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    page._duplicate_template()
+    assert page._template_box.count() == before
+
+
+def test_template_editor_saves_the_edited_columns(context, qt_app, team):
+    from app.services import report_template as tpl
+    from app.ui.report_dialogs import TemplateEditorDialog
+
+    template = tpl.template_by_name(context.settings, "Payroll sheet")
+    dialog = TemplateEditorDialog(template)
+    dialog._table.item(0, 2).setText("Day")
+    dialog._on_save()
+
+    assert template.columns[0].heading == "Day"
+    assert template.builtin is False
+
+
+def test_template_editor_needs_a_heading(context, qt_app, team, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services import report_template as tpl
+    from app.ui.report_dialogs import TemplateEditorDialog
+
+    template = tpl.template_by_name(context.settings, "Payroll sheet")
+    dialog = TemplateEditorDialog(template)
+    dialog._table.item(0, 2).setText("  ")
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a)))
+    dialog._on_save()
+    assert warnings
+
+
+def test_template_editor_needs_one_included_column(context, qt_app, team, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services import report_template as tpl
+    from app.ui.report_dialogs import TemplateEditorDialog
+
+    template = tpl.template_by_name(context.settings, "Payroll sheet")
+    dialog = TemplateEditorDialog(template)
+    for row in range(dialog._table.rowCount()):
+        dialog._table.item(row, 0).setCheckState(Qt.CheckState.Unchecked)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a)))
+    dialog._on_save()
+    assert warnings
+
+
+def test_template_editor_move_up_reorders(context, qt_app, team):
+    from app.services import report_template as tpl
+    from app.ui.report_dialogs import TemplateEditorDialog
+
+    template = tpl.template_by_name(context.settings, "Payroll sheet")
+    dialog = TemplateEditorDialog(template)
+    dialog._table.setCurrentCell(1, 0)
+    dialog._move(-1)
+    assert dialog._table.item(0, 1).text() == "Date"
+
+
+def test_import_preview_blocks_confirmation_on_errors():
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from app.ui.report_dialogs import ImportPreviewDialog
+
+    dialog = ImportPreviewDialog(
+        "Import employees",
+        {"new": 3, "changed": 0, "skipped": 1, "errors": 1},
+        [(2, "Ana Reyes", "New")],
+        [],
+        ["line 4: no full name"],
+    )
+    ok = dialog._buttons.button(QDialogButtonBox.StandardButton.Ok)
+    assert ok.isEnabled() is False
+    dialog.close()
+
+
+def test_import_preview_allows_confirmation_when_clean():
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from app.ui.report_dialogs import ImportPreviewDialog
+
+    dialog = ImportPreviewDialog(
+        "Import employees",
+        {"new": 2, "changed": 0, "skipped": 0, "errors": 0},
+        [(2, "Ana Reyes", "New")],
+        [],
+        [],
+    )
+    ok = dialog._buttons.button(QDialogButtonBox.StandardButton.Ok)
+    assert ok.isEnabled() is True
+    assert ok.text() == "Import"
+    dialog.close()
+
+
+def test_reports_page_import_writes_nothing_when_cancelled(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.reports import ReportsPage
+
+    source = tmp_path / "attendance.csv"
+    source.write_text("Employee ID,Time In,Time Out\nEMP-001,08:00,17:00\n", encoding="utf-8")
+    page = ReportsPage(context)
+    page._day.setDate(QDate(2026, 3, 2))
+    monkeypatch.setattr("app.ui.reports.pick_spreadsheet", lambda *a, **k: source)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
+    page._import_file()
+
+    assert context.repositories.attendance.get_for_date(
+        team[0].employee_id, "2026-03-02"
+    ) is None
+
+
+def test_reports_page_import_writes_after_confirmation(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    from app.ui.reports import ReportsPage
+
+    source = tmp_path / "attendance.csv"
+    source.write_text("Employee ID,Time In,Time Out\nEMP-001,08:00,17:00\n", encoding="utf-8")
+    page = ReportsPage(context)
+    page._day.setDate(QDate(2026, 3, 2))
+    monkeypatch.setattr("app.ui.reports.pick_spreadsheet", lambda *a, **k: source)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    page._import_file()
+
+    records = context.repositories.attendance.list_for_range("2026-03-02", "2026-03-02")
+    assert len(records) == 1
+    assert context.clock.format_time(records[0].time_in) == "08:00 AM"
+
+
+def test_employee_page_import_creates_after_confirmation(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    from app.ui.employee_management import EmployeePage
+
+    source = tmp_path / "employees.csv"
+    source.write_text(
+        "Employee ID,Full Name,Department\nEMP-500,Ana Reyes,Field\n", encoding="utf-8"
+    )
+    page = EmployeePage(context)
+    monkeypatch.setattr(
+        "app.ui.employee_management.pick_spreadsheet", lambda *a, **k: source
+    )
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    page._import_file()
+
+    assert context.employees.get_by_code("EMP-500") is not None
+
+
+def test_employee_page_import_writes_nothing_when_cancelled(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.employee_management import EmployeePage
+
+    source = tmp_path / "employees.csv"
+    source.write_text(
+        "Employee ID,Full Name\nEMP-500,Ana Reyes\n", encoding="utf-8"
+    )
+    page = EmployeePage(context)
+    monkeypatch.setattr(
+        "app.ui.employee_management.pick_spreadsheet", lambda *a, **k: source
+    )
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
+    page._import_file()
+
+    assert context.employees.get_by_code("EMP-500") is None
+
+
+def test_employee_page_saves_a_sample_file(context, qt_app, team, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.ui.employee_management import EmployeePage
+
+    target = tmp_path / "sample.csv"
+    page = EmployeePage(context)
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+    )
+    page._save_sample_file()
+    assert "Employee ID" in target.read_text(encoding="utf-8")
+
+
 # -- settings ----------------------------------------------------------------
 def test_settings_page_saves_a_value(context, qt_app, admin_session, monkeypatch):
     from PySide6.QtWidgets import QMessageBox

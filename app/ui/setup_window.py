@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.constants import APP_NAME, APP_TAGLINE
+from app.services import presets
 from app.ui import theme
 from app.ui.widgets import PrimaryButton
 from app.ui.window_sizing import fit_to_screen
@@ -92,6 +94,10 @@ class SetupWindow(QWidget):
         body_layout.addLayout(self._field("Confirm password", self._confirm,
                                           "Type the password again"))
 
+        body_layout.addSpacing(8)
+        body_layout.addWidget(self._organisation_type())
+        body_layout.addWidget(self._clock_in_mode())
+
         body_layout.addWidget(self._error)
 
         self._create_button = PrimaryButton("CREATE ACCOUNT", self._submit)
@@ -165,6 +171,58 @@ class SetupWindow(QWidget):
 
         layout.addSpacing(6)
         return hero
+
+    def _organisation_type(self) -> QWidget:
+        box = QFrame()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        caption = QLabel("What kind of organisation is this?")
+        caption.setProperty("role", "field")
+        layout.addWidget(caption)
+
+        self._type_box = QComboBox()
+        for label, key in presets.TYPES:
+            self._type_box.addItem(label, key)
+        self._type_box.setToolTip(
+            "Sets the work week, weekly goal and shift times. "
+            "You can change all of these later in Settings."
+        )
+        self._type_box.setMinimumHeight(40)
+        layout.addWidget(self._type_box)
+        return box
+
+    def _clock_in_mode(self) -> QWidget:
+        box = QFrame()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        caption = QLabel("How do people clock in?")
+        caption.setProperty("role", "field")
+        layout.addWidget(caption)
+
+        self._mode_box = QComboBox()
+        self._mode_box.addItem("Quick - one scan is enough", presets.MODE_QUICK)
+        self._mode_box.addItem(
+            "Strict - own QR, then the TIME IN/OUT QR", presets.MODE_STRICT
+        )
+        self._mode_box.setToolTip(
+            "Strict asks for each employee's own QR before the shared "
+            "TIME IN or TIME OUT code, so nobody can clock in for someone else."
+        )
+        self._mode_box.setMinimumHeight(40)
+        layout.addWidget(self._mode_box)
+        return box
+
+    @property
+    def organisation_type(self) -> str:
+        return self._type_box.currentData()
+
+    @property
+    def clock_in_mode(self) -> str:
+        return self._mode_box.currentData()
 
     @staticmethod
     def _field(label: str, widget: QWidget, placeholder: str = "") -> QHBoxLayout:

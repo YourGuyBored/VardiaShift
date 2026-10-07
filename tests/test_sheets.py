@@ -156,6 +156,19 @@ def test_sheet_values_mirror_the_report(report):
     assert all(isinstance(cell, str) for row in rows for cell in row)
 
 
+def test_sheet_values_write_hours_as_two_decimals(report):
+    from app.services import report_template as tpl
+
+    template = tpl.builtin_templates()[1]  # hours as numbers
+    shaped = tpl.apply_template(report, template)
+    rows = build_sheet_values(shaped.to_report_result())
+    # The summary block is text by design, so only the Hours column is checked.
+    hours_column = shaped.headers.index("Hours Worked")
+    flat = [cell for cell in (row[hours_column] for row in rows if len(row) > hours_column)]
+    assert "8.00" in flat
+    assert "8h 00m" not in flat
+
+
 def test_sheet_values_neutralise_formulas(context, admin, frozen):
     context.employees.create("EMP-009", "=HYPERLINK(1)", admin_username="admin")
     report = context.reports.daily_report(frozen.reference.date())

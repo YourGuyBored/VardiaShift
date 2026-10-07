@@ -13,7 +13,6 @@ Download it, open it, scan QR codes, track hours.
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-425%20passing-brightgreen)
 
 ![VardiaShift dashboard](assets/screenshots/dashboard.png)
 
@@ -99,7 +98,7 @@ creates one, and shows the **first-time setup** screen:
 
 ```text
 ================================
-     EMPLOYEE ATTENDANCE
+      VARDIASHIFT
 ================================
 
         FIRST-TIME SETUP
@@ -115,8 +114,20 @@ Password (min. 8 characters)
 Confirm Password
 [________________]
 
+What kind of organisation is this?
+[ School                     v ]
+
+How do people clock in?
+[ Quick - one scan is enough  v ]
+
         [ CREATE ACCOUNT ]
 ```
+
+Two questions come with the account. **Organisation type** sets the work week,
+the weekly goal and the shift times for a School, Small office or Shop.
+**How people clock in** picks between Quick, where one scan records the arrival,
+and Strict, where each employee's own QR is scanned before the shared TIME IN or
+TIME OUT code. Both are ordinary settings, changeable later in Settings.
 
 After creating the account you land on the **dashboard**. You will sign in
 with this account on every later launch.
@@ -124,6 +135,12 @@ with this account on every later launch.
 Passwords are stored only as salted **PBKDF2-SHA256** hashes - never in plain
 text. After several wrong attempts sign-in locks briefly, and an idle session
 signs itself out (configurable in Settings).
+
+With no employees the dashboard offers **Load sample data**: three demo
+employees and a week of attendance, so the app can be looked at before any real
+data is entered. **Remove sample data**, on the same page, deletes them and
+their attendance in one click. Sample employees use a `sample-` ID prefix, so
+removal cannot touch a real employee.
 
 ---
 
@@ -152,6 +169,19 @@ and weekly goal. You can **edit**, **deactivate/reactivate**, and search them.
 
 Employees with attendance history are **never permanently deleted** -
 deactivate them instead, so the records stay intact.
+
+### Adding many employees at once
+
+**Employees** → **Sample file** saves a CSV you can fill in. Add one row per
+person, then **Import from file**. Pick the CSV or an XLSX and a preview shows
+every row first: how many are new, how many update an existing employee, how many
+are skipped, and every error. Nothing is saved until you confirm, and a file with
+any error row cannot be confirmed until the errors are fixed.
+
+Columns are `Employee ID`, `Full Name`, `Department`, `Position` and
+`Custom Code`. An ID repeated inside one file is skipped. A custom code that
+already belongs to a different employee is reported as an error rather than being
+reassigned.
 
 ---
 
@@ -340,10 +370,27 @@ new value and reason. Nothing is ever silently overwritten.
 employee, exported as **CSV** (always), **XLSX**, or sent straight to
 **Google Sheets** (see below).
 
+**Report templates** - a template decides which columns an export has, in what
+order, what each is called, how wide it is, and whether a duration is written as
+text (`8h 12m`) or as a number (`8.23`) so a spreadsheet can total it. Pick one
+from the dropdown on the Reports page; **Edit template** changes the columns and
+**Duplicate** makes a copy to adjust. CSV, XLSX and Google Sheets all use the
+same template, so the three exports of one report match. Six templates ship
+built in, including a payroll sheet and a compact variant.
+
+**Importing a spreadsheet** - **Reports** → **Import from file** reads a CSV or
+XLSX back in using the same template, so a report exported from VardiaShift can
+be edited in Excel and imported again. A preview counts new, changed, skipped
+and error rows and lists the detail for each. Nothing is written until you
+confirm, and a file with any error row cannot be confirmed. Every change is
+audit-logged with the reason *Imported from spreadsheet*.
+
 **Settings** - organisation name, time zone, date/time formats, default
 weekly goal (20/25/30/35/40 presets), work-week days, shift times, daily cap,
-overtime tracking, grace periods, duplicate-scan window, kiosk behaviour,
-auto sign-out, and audit retention. Everything persists in the database.
+overtime tracking, kiosk behaviour and auto sign-out on the main tabs. The four
+settings that rarely need changing - grace period, duplicate-scan window, audit
+log retention and phone port - are on an **Advanced** tab. Everything persists
+in the database.
 
 **Backup & Restore** - one-click timestamped backups
 (`backup_2026-10-03_21-30-00.db`), a backup list, restore from the list or
@@ -392,7 +439,7 @@ handling as the CSV/XLSX exports.
 
 ```bash
 git clone https://github.com/YourGuyBored/VardiaShift.git
-cd vardiashift
+cd VardiaShift
 python -m venv .venv
 # Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -405,7 +452,7 @@ Optional extras:
 pip install -r requirements-optional.txt   # webcam scanning (Google Sheets ships built-in)
 ```
 
-Run the test suite (425 tests: services, QR, reports, backup, phone, sheets, GUI):
+Run the test suite:
 
 ```bash
 python -m pytest tests/ -q
@@ -464,7 +511,7 @@ Windows and Linux via `.github/workflows/tests.yml`.
 ## Project structure
 
 ```text
-vardiashift/
+VardiaShift/
 ├── app/
 │   ├── main.py               # entry point, setup→login→main state machine
 │   ├── context.py            # composition root (database, services, QR, phone)
@@ -479,11 +526,11 @@ vardiashift/
 │   └── utils/                # app-data paths, time utils, validation
 ├── tests/                    # pytest suite
 ├── installer/windows/        # Inno Setup installer script
-├── assets/                   # application icon
+├── assets/                   # application icon and README screenshots
 ├── data/                     # placeholder (runtime data lives in the OS data dir)
 ├── run.py                    # `python run.py` launcher
 ├── setup_windows.bat         # double-click install from source (Windows)
-├── VardiaShift.spec             # PyInstaller specification
+├── VardiaShift.spec          # PyInstaller specification
 ├── build_windows.bat / build_linux.sh
 ├── requirements*.txt / pyproject.toml
 └── README.md / CHANGELOG.md / LICENSE

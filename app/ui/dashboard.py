@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -18,11 +19,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.models.attendance import ATTENDANCE_MISSING, ATTENDANCE_OPEN
+from app.services import sample_data
 from app.ui import theme
 from app.ui.widgets import (
     BarChart,
     Card,
     EmptyState,
+    PrimaryButton,
     ProgressBarRow,
     StatTile,
     StatusBadge,
@@ -104,6 +107,14 @@ class DashboardPage(QWidget):
         refresh.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh.clicked.connect(self.refresh)
         row.addWidget(refresh)
+
+        self._sample_button = QPushButton("Remove sample data")
+        self._sample_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sample_button.setToolTip(
+            "Delete the demo employees and their attendance"
+        )
+        self._sample_button.clicked.connect(self._remove_sample)
+        row.addWidget(self._sample_button)
         return row
 
     def _stat_row(self) -> QHBoxLayout:
@@ -163,11 +174,41 @@ class DashboardPage(QWidget):
 
         self._empty = EmptyState(
             "No employees yet",
-            "Add your first employee on the Employees page to start tracking attendance.",
+            "Add your first employee on the Employees page, or load sample data "
+            "to look around first.",
+        )
+        self._load_sample = PrimaryButton("Load sample data", self._add_sample)
+        self._empty.body().addWidget(
+            self._load_sample, alignment=Qt.AlignmentFlag.AlignCenter
         )
         self._empty.hide()
         card.add(self._empty)
         return card
+
+    # -- sample data ---------------------------------------------------------
+    def _add_sample(self) -> None:
+        created = sample_data.load(self.context, self.context.require_admin())
+        QMessageBox.information(
+            self,
+            "Sample data loaded",
+            f"{created} demo employee(s) added. Remove them from the button "
+            "above at any time.",
+        )
+        self.refresh()
+
+    def _remove_sample(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Remove sample data",
+            "Delete the demo employees and all of their attendance records?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        removed = sample_data.remove(self.context)
+        QMessageBox.information(self, "Sample data removed", f"{removed} employee(s) deleted.")
+        self.refresh()
 
     # -- interaction ---------------------------------------------------------
     def _on_search(self, text: str) -> None:
@@ -304,6 +345,7 @@ class DashboardPage(QWidget):
         self._empty.setVisible(not rows and not summary.rows)
         if not summary.rows:
             self._empty.setVisible(True)
+        self._sample_button.setVisible(sample_data.has_sample_data(self.context))
 
 
 __all__ = ["COLUMNS", "DashboardPage"]

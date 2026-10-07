@@ -126,7 +126,14 @@ def build_sheet_values(report) -> list[list]:
 
     def cell(value) -> str:
         clean = sanitize_spreadsheet_cell(value)
-        return "" if clean is None else str(clean)
+        if clean is None:
+            return ""
+        # Hours columns carry a float once a template is applied, and a
+        # spreadsheet should show the same two decimals the CSV and XLSX
+        # exports write.
+        if isinstance(clean, float):
+            return f"{clean:.2f}"
+        return str(clean)
 
     rows = [[report.title], [report.subtitle], []]
     for label, value in report.summary:

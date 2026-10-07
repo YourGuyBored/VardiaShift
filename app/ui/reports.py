@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDateEdit,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -22,8 +25,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services import report_template as tpl
+from app.services.report_import import (
+    apply_attendance_import,
+    plan_attendance_import,
+)
 from app.services.report_service import XLSX_AVAILABLE
 from app.ui import theme
+from app.ui.report_dialogs import ImportPreviewDialog, TemplateEditorDialog, pick_spreadsheet
 from app.ui.widgets import Card, EmptyState, PrimaryButton
 
 TYPES = [
@@ -138,9 +147,40 @@ class ReportsPage(QWidget):
         self._sheets_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sheets_button.clicked.connect(self._send_to_sheets)
         buttons.addWidget(self._sheets_button)
+
+        self._import_button = QPushButton("Import from file")
+        self._import_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._import_button.clicked.connect(self._import_file)
+        buttons.addWidget(self._import_button)
+
         buttons.addStretch(1)
+
+        self._template_bar = QHBoxLayout()
+        self._template_bar.setSpacing(8)
+        self._template_box = QComboBox()
+        self._template_box.setMinimumWidth(240)
+        self._template_box.setToolTip(
+            "Column layout used by CSV, XLSX and Google Sheets export."
+        )
+        self._template_box.currentIndexChanged.connect(self._on_template_changed)
+        self._template_bar.addWidget(QLabel("Template"))
+        self._template_bar.addWidget(self._template_box)
+
+        edit = QPushButton("Edit template")
+        edit.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit.clicked.connect(self._edit_template)
+        self._template_bar.addWidget(edit)
+
+        duplicate = QPushButton("Duplicate")
+        duplicate.setCursor(Qt.CursorShape.PointingHandCursor)
+        duplicate.clicked.connect(self._duplicate_template)
+        self._template_bar.addWidget(duplicate)
+        self._template_bar.addStretch(1)
+        card.add_layout(self._template_bar)
         card.add_layout(buttons)
+
         self._refresh_sheets_button()
+        self._reload_templates()
 
         root.addWidget(card, 1)
         self.refresh()
@@ -220,6 +260,7 @@ class ReportsPage(QWidget):
         self._employee_box.setCurrentIndex(index if index >= 0 else 0)
         self._employee_box.blockSignals(False)
 
+        self._reload_templates()
         self.generate()
 
     def _week_for_offset(self, offset: int):
@@ -295,9 +336,115 @@ class ReportsPage(QWidget):
         self._xlsx_button.setEnabled(not report.is_empty and XLSX_AVAILABLE)
         self._refresh_sheets_button()
 
+    # -- templates -----------------------------------------------------------
+    def _reload_templates(self) -> None:
+        previous = self._template_box.currentData()
+        self._template_box.blockSignals(True)
+        self._template_box.clear()
+        for template in tpl.load_templates(self.context.settings):
+            self._template_box.addItem(template.name, template.name)
+        index = self._template_box.findData(previous)
+        self._template_box.setCurrentIndex(index if index >= 0 else 0)
+        self._template_box.blockSignals(False)
+
+    def _current_template(self, kind: str, headers: list[str]):
+        """The chosen template, plus any warnings about columns it leaves out."""
+        name = self._template_box.currentData()
+        if not name:
+            headers = list(headers)
+            return tpl.ReportTemplate(
+                name="(report default)",
+                kind=kind,
+                columns=[tpl.TemplateColumn(key=header) for header in headers],
+            ), []
+        return tpl.resolve_template(self.context.settings, name, kind, headers)
+
+    def _on_template_changed(self) -> None:
+        self.generate()
+
+    def _shaped(self):
+        """The current report shaped by the chosen template."""
+        if self._report is None:
+            return None
+        template, _warnings = self._current_template(
+            self._type_box.currentData() or "daily", self._report.headers
+        )
+        return tpl.apply_template(self._report, template)
+
+    def _edit_template(self) -> None:
+        name = self._template_box.currentData()
+        template = tpl.template_by_name(self.context.settings, name) if name else None
+        if template is None:
+            return
+        dialog = TemplateEditorDialog(template, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        tpl.save_templates(self.context.settings, [template], self.context.require_admin())
+        self._reload_templates()
+        index = self._template_box.findData(template.name)
+        if index >= 0:
+            self._template_box.setCurrentIndex(index)
+
+    def _duplicate_template(self) -> None:
+        name = self._template_box.currentData()
+        template = tpl.template_by_name(self.context.settings, name) if name else None
+        if template is None:
+            return
+        suggested = f"{template.name} (copy)"
+        answer, ok = QInputDialog.getText(self, "Duplicate template", "New name:", text=suggested)
+        if not ok or not answer.strip():
+            return
+        clone = template.duplicate(answer.strip())
+        if tpl.template_by_name(self.context.settings, clone.name) is not None:
+            QMessageBox.warning(self, "Name in use", f"A template called '{clone.name}' already exists.")
+            return
+        tpl.save_templates(self.context.settings, [clone], self.context.require_admin())
+        self._reload_templates()
+        index = self._template_box.findData(clone.name)
+        if index >= 0:
+            self._template_box.setCurrentIndex(index)
+
+    def _selected_day(self) -> date:
+        """The day the current report covers, used when a file has no Date column."""
+        kind = self._type_box.currentData() or "daily"
+        if kind == "daily":
+            return self._qdate_to_date(self._day)
+        if kind == "weekly":
+            return self._week_for_offset(self._week_box.currentData() or 0).start
+        if kind == "monthly":
+            return self.context.clock.month_bounds().start
+        return self._qdate_to_date(self._from_date)
+
+    def _import_file(self) -> None:
+        path = pick_spreadsheet(self, "Import from spreadsheet")
+        if path is None:
+            return
+        kind = self._type_box.currentData() or "daily"
+        headers = self._report.headers if self._report is not None else []
+        template, warnings = self._current_template(kind, headers)
+        day = self._selected_day()
+        try:
+            plan, rows = plan_attendance_import(self.context, template, path, day)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Could not read the file", str(exc))
+            return
+
+        dialog = ImportPreviewDialog(
+            f"Import attendance from {path.name}", plan.counts, plan.rows,
+            warnings + plan.warnings, plan.errors, self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        changed = apply_attendance_import(
+            self.context, rows, self.context.require_admin(), day
+        )
+        QMessageBox.information(self, "Import finished", f"{changed} record(s) written.")
+        self.generate()
+
     # -- export --------------------------------------------------------------
     def _export_csv(self) -> None:
-        if self._report is None or self._report.is_empty:
+        shaped = self._shaped()
+        if shaped is None or self._report.is_empty:
             QMessageBox.information(self, "Nothing to export", "Generate a report first.")
             return
         name = self.context.reports.suggest_filename(self._report, "csv")
@@ -305,11 +452,12 @@ class ReportsPage(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, "Export CSV", default, "CSV files (*.csv)")
         if not path:
             return
-        self.context.reports.write_csv(self._report, path)
+        Path(path).write_bytes(tpl.to_csv_bytes(shaped))
         QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
 
     def _export_xlsx(self) -> None:
-        if self._report is None or self._report.is_empty:
+        shaped = self._shaped()
+        if shaped is None or self._report.is_empty:
             QMessageBox.information(self, "Nothing to export", "Generate a report first.")
             return
         if not XLSX_AVAILABLE:
@@ -324,7 +472,7 @@ class ReportsPage(QWidget):
         )
         if not path:
             return
-        self.context.reports.write_xlsx(self._report, path)
+        tpl.write_xlsx(shaped, path)
         QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
 
     def _open_folder(self) -> None:
@@ -349,9 +497,6 @@ class ReportsPage(QWidget):
                 "Upload this report as a new tab in the configured spreadsheet."
             )
 
-    def _report_empty(self) -> bool:
-        return self._report is None or self._report.is_empty
-
     def _send_to_sheets(self) -> None:
         from app.services.google_sheets import (
             GoogleSheetsError,
@@ -360,7 +505,8 @@ class ReportsPage(QWidget):
             stored_key_path,
         )
 
-        if self._report_empty():
+        shaped = self._shaped()
+        if shaped is None or self._report.is_empty:
             QMessageBox.information(self, "Nothing to send", "Generate a report first.")
             return
         if not sheets_available():
@@ -385,7 +531,7 @@ class ReportsPage(QWidget):
             title, count = push_report(
                 stored_key_path(self.context.paths.root),
                 settings.sheets_spreadsheet_id,
-                self._report,
+                shaped.to_report_result(),
                 self.context.clock.export_stamp(),
             )
         except GoogleSheetsError as exc:

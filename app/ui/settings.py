@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from app.constants import WEEKLY_GOAL_PRESETS
 from app.models.settings import (
+    GROUP_ADVANCED,
     GROUP_ATTENDANCE,
     GROUP_GENERAL,
     GROUP_KIOSK,
@@ -166,6 +167,15 @@ class SettingsPage(QWidget):
         widget.setMinimumHeight(38)
         return widget
 
+    def _build_advanced_note(self) -> QWidget:
+        note = QLabel(
+            "These settings rarely need changing. The defaults suit most "
+            "installations."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("CardHint")
+        return note
+
     def _build_group(self, group: str) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -197,6 +207,8 @@ class SettingsPage(QWidget):
             layout.addWidget(self._build_phone_status_card())
         if group == GROUP_SHEETS:
             layout.addWidget(self._build_sheets_status_card())
+        if group == GROUP_ADVANCED:
+            layout.addWidget(self._build_advanced_note())
         layout.addStretch(1)
         return page
 

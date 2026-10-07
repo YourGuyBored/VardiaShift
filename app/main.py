@@ -170,9 +170,22 @@ class Application:
             QMessageBox.critical(None, "Setup failed", getattr(exc, "message", str(exc)))
             return
         if self._setup is not None:
+            self._apply_setup_choices(self._setup.organisation_type, self._setup.clock_in_mode)
             self._setup.close()
             self._setup = None
         self._show_main_window(welcome=True)
+
+    def _apply_setup_choices(self, organisation_type: str, clock_in_mode: str) -> None:
+        from app.services.presets import apply_clock_in_mode, apply_organisation_type
+
+        username = self.context.authentication.current_username or "admin"
+        try:
+            apply_organisation_type(self.context.settings, organisation_type, username)
+            apply_clock_in_mode(self.context.settings, clock_in_mode, username)
+        except Exception:
+            logging.getLogger("vardiashift").warning(
+                "Could not apply the setup choices", exc_info=True
+            )
 
     def _show_login(self) -> None:
         from app.ui.login_window import LoginWindow

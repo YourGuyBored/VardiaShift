@@ -109,6 +109,12 @@ class SettingsService:
 
         for key, raw in values.items():
             if key not in SPEC_BY_KEY:
+                # A key with no declared spec is still storable: report
+                # templates and similar structured values are written this
+                # way. Silently dropping it would lose data without telling
+                # anyone, so store it as given.
+                accepted[key] = raw
+                changes.append((key, None, raw))
                 continue
             message = self.validate(key, raw)
             if message:
@@ -127,19 +133,32 @@ class SettingsService:
             return []
 
         self.repos.settings.set_many(
-            {key: SPEC_BY_KEY[key].serialize(value) for key, value in accepted.items()},
+            {
+                key: (
+                    SPEC_BY_KEY[key].serialize(value)
+                    if key in SPEC_BY_KEY
+                    else (value if isinstance(value, str) else str(value))
+                )
+                for key, value in accepted.items()
+            },
             admin_username,
         )
         self.refresh()
 
-        if changes:
+        # Structured values (report templates) are logged by name only: the
+        # audit log is not the place for a large JSON blob. Declared
+        # settings keep their human label; anything else is logged by key.
+        logged = []
+        for key, (label, old, new) in zip(accepted, changes):
+            logged.append((SPEC_BY_KEY[key].label if key in SPEC_BY_KEY else key, old, new))
+        if logged:
             self.repos.audit.log(
                 ACTION_SETTINGS_UPDATE,
                 admin_username=admin_username,
                 entity_type="settings",
-                description="Updated: " + ", ".join(label for label, _, _ in changes),
-                old_value="; ".join(f"{label}={old}" for label, old, _ in changes),
-                new_value="; ".join(f"{label}={new}" for label, _, new in changes),
+                description="Updated: " + ", ".join(label for label, _, _ in logged),
+                old_value="; ".join(f"{label}={old}" for label, old, _ in logged),
+                new_value="; ".join(f"{label}={new}" for label, _, new in logged),
                 reason=reason,
                 severity=SEVERITY_INFO,
             )

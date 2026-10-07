@@ -277,6 +277,9 @@ class EmptyState(QWidget):
             body.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
             layout.addWidget(body)
 
+    def body(self) -> QVBoxLayout:
+        return self.layout()  # type: ignore[return-value]
+
 
 class PrimaryButton(QPushButton):
     def __init__(self, text: str, on_click: Callable | None = None, parent: QWidget | None = None) -> None:
