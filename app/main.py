@@ -13,6 +13,10 @@ from app.context import ApplicationContext, get_context, reset_context
 
 LOG_FILE_NAME = "vardiashift.log"
 
+#: Must match the file installed by installer/linux/install.sh, so a Linux
+#: desktop can associate this window with its menu entry.
+DESKTOP_FILE_NAME = "vardiashift.desktop"
+
 
 def _configure_logging(paths) -> None:
     """Write a rotating log next to the database so support can diagnose issues."""
@@ -107,6 +111,7 @@ class Application:
         self._login = None
         self._setup = None
         self._pending_notice = ""
+        self._kiosk = None
 
     # -- Qt ------------------------------------------------------------------
     def create_qt_app(self):
@@ -116,19 +121,139 @@ class Application:
         if existing is not None:
             self.qt_app = existing
         else:
+            self._declare_windows_app_id()
             self.qt_app = QApplication(sys.argv)
             self.qt_app.setApplicationVersion(APP_VERSION)
             self.qt_app.setOrganizationName(APP_NAME)
+            # Lets a desktop match this window to vardiashift.desktop, so the
+            # taskbar shows the installed icon rather than a generic one.
+            self.qt_app.setDesktopFileName(DESKTOP_FILE_NAME)
         from PySide6.QtGui import QIcon
 
-        from app.ui.theme import apply_theme
+        from app.ui.theme import apply_accent
         from app.utils.paths import resource_path
 
-        apply_theme(self.qt_app)
+        apply_accent(self.qt_app, self.context.settings.settings.accent)
         icon_path = resource_path("assets/icon.png")
         if icon_path.is_file():
             self.qt_app.setWindowIcon(QIcon(str(icon_path)))
+            self._app_icon = icon_path
         return self.qt_app
+
+    @staticmethod
+    def _declare_windows_app_id() -> None:
+        """Give Windows a stable AppUserModelID before any window exists.
+
+        Without it the taskbar groups VardiaShift under python.exe and shows
+        Python's icon, because the ID is read when the first window is created.
+        """
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "VardiaShift.Desktop"
+            )
+        except Exception:
+            # A missing icon grouping is not worth refusing to start over.
+            logging.getLogger("vardiashift").debug(
+                "Could not set the Windows AppUserModelID", exc_info=True
+            )
+
+    def _apply_window_icon(self, window) -> None:
+        """Set the icon on a window, not just on the application.
+
+        A window with no icon of its own falls back to the desktop's guess,
+        which on Linux is the generic Python icon and on Windows is nothing at
+        all until the taskbar has a matching AppUserModelID.
+        """
+        from PySide6.QtGui import QIcon
+
+        icon_path = getattr(self, "_app_icon", None)
+        if icon_path is None:
+            return
+        icon = QIcon(str(icon_path))
+        window.setWindowIcon(icon)
+        if os.name == "nt":
+            self._pin_windows_taskbar_icon(window, icon)
+
+    @staticmethod
+    def _pin_windows_taskbar_icon(window, icon) -> None:
+        """Hand the icon to the Windows taskbar for this window handle.
+
+        Qt sets the icon on the window but not on the taskbar button, which is
+        why a PyInstaller app can show the right icon in its title bar and the
+        wrong one in the taskbar. Windows wants the handle, so the window has to
+        be native before this can run.
+        """
+        try:
+            import ctypes
+
+            handle = int(window.winId())
+            ctypes.windll.user32.SendMessageW(handle, 0x0080, 0, 0)  # WM_SETICON
+            ctypes.windll.user32.SendMessageW(handle, 0x0080, 1, 0)
+        except Exception:
+            logging.getLogger("vardiashift").debug(
+                "Could not pin the Windows taskbar icon", exc_info=True
+            )
+
+    # -- kiosk ---------------------------------------------------------------
+    @property
+    def kiosk(self):
+        """The running kiosk window, or ``None``.
+
+        Owned here rather than by the admin window so signing out leaves
+        scanning running.
+        """
+        return self._kiosk
+
+    def open_kiosk(self) -> None:
+        from app.ui.attendance_kiosk import KioskWindow
+
+        if self._kiosk is None:
+            self._kiosk = KioskWindow(self.context)
+            self._kiosk.finished.connect(self._on_kiosk_finished)
+        self._kiosk.show_kiosk()
+        if self.window is not None:
+            self._pre_kiosk_minimized = (
+                self.window.isMaximized() or self.window.isFullScreen()
+            )
+            self.window.showMinimized()
+
+    def _on_kiosk_finished(self) -> None:
+        # Guard against re-entrancy: closing the kiosk emits `finished`,
+        # which would otherwise recurse into this slot.
+        kiosk, self._kiosk = self._kiosk, None
+        if kiosk is not None:
+            try:
+                kiosk.finished.disconnect(self._on_kiosk_finished)
+            except (TypeError, RuntimeError):
+                pass
+            kiosk.force_close()
+            kiosk.deleteLater()
+        if self.window is not None:
+            if getattr(self, "_pre_kiosk_minimized", False):
+                self.window.showMaximized()
+            else:
+                self.window.showNormal()
+            self.window.raise_()
+            self.window.activateWindow()
+
+    def close_kiosk(self) -> None:
+        """Drop the kiosk without touching any other window."""
+        kiosk, self._kiosk = self._kiosk, None
+        if kiosk is None:
+            return
+        try:
+            kiosk.finished.disconnect(self._on_kiosk_finished)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            kiosk.force_close()
+            kiosk.deleteLater()
+        except RuntimeError:
+            pass  # C++ object already gone
 
     # -- flow ----------------------------------------------------------------
     def start(self) -> int:
@@ -149,6 +274,7 @@ class Application:
                 version=APP_VERSION,
             )
             self._setup.account_created.connect(self._create_first_admin)
+            self._apply_window_icon(self._setup)
         self._setup.show()
         self._setup.raise_()
         self._setup.activateWindow()
@@ -195,6 +321,7 @@ class Application:
                 organization=self.context.organization_name, version=APP_VERSION
             )
             self._login.authenticated.connect(self._authenticate)
+            self._apply_window_icon(self._login)
         if self._pending_notice:
             from PySide6.QtWidgets import QMessageBox
 
@@ -223,6 +350,7 @@ class Application:
 
         if self.window is None:
             self.window = MainWindow(self.context)
+            self._apply_window_icon(self.window)
             self._pages = build_pages(self.window, self.context)
             self.window.signed_out.connect(self._on_signed_out)
             # Remembered size/position, re-clamped to this screen. Only
