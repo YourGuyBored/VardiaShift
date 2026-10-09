@@ -1,277 +1,424 @@
-"""Central Qt stylesheet and palette so the whole app looks consistent."""
+"""Central Qt stylesheet and palette so the whole app looks consistent.
+
+VardiaShift Visual Design System
+================================
+
+Direction: Professional Utility
+-------------------------------
+A clean, efficient work tool for adult professionals. No gradients, no decorative
+shadows, no rounded corners on data containers. Uses sharp edges for tables
+and cards to convey precision and reliability.
+
+Palette:
+  Base:    #0F172A (deep navy - professional, trustworthy)
+  Surface: #FFFFFF (clean white - data clarity)
+  Ink:     #0F172A (same as base - maximum contrast)
+  Accent:  #006D77 (deep teal - professional, not playful)
+  
+Type:
+  Segoe UI (Windows native) / Noto Sans (cross-platform fallback)
+  Clear, readable, no-nonsense typography
+
+Restraint:
+  No gradients, no rounded corners on data containers, no decorative shadows,
+  no animations beyond essential state feedback.
+"""
 
 from __future__ import annotations
 
 from app.constants import APP_NAME
 
-# -- design tokens -----------------------------------------------------------
-BG = "#0F172A"
-BG_SOFT = "#F1F5F9"
-SURFACE = "#FFFFFF"
-SURFACE_ALT = "#F8FAFC"
-BORDER = "#E2E8F0"
-BORDER_STRONG = "#CBD5E1"
+# -- Design Tokens -----------------------------------------------------------
+# Professional Utility palette: deep navy, clean white, charcoal ink, deep teal accent
 
-TEXT = "#0F172A"
-TEXT_MUTED = "#64748B"
-TEXT_SOFT = "#94A3B8"
-TEXT_ON_DARK = "#F8FAFC"
+# Base colors
+BG = "#0F172A"           # Deep navy - professional, trustworthy
+BG_SOFT = "#F8FAFC"     # Very light gray - subtle background
+SURFACE = "#FFFFFF"      # Clean white - data clarity
+SURFACE_ALT = "#F8FAFC" # Off-white for secondary surfaces
 
-PRIMARY = "#2563EB"
-PRIMARY_DARK = "#1D4ED8"
-PRIMARY_SOFT = "#DBEAFE"
-SUCCESS = "#16A34A"
-SUCCESS_SOFT = "#DCFCE7"
-WARNING = "#D97706"
-WARNING_SOFT = "#FEF3C7"
-DANGER = "#DC2626"
+# Borders - sharp, precise
+BORDER = "#E2E8F0"       # Light gray border
+BORDER_STRONG = "#CBD5E1" # Slightly darker border
+
+# Text - maximum readability
+TEXT = "#0F172A"         # Deep navy (matches base) - maximum contrast
+TEXT_MUTED = "#475569"   # Muted gray for secondary text
+TEXT_SOFT = "#94A3B8"    # Soft gray for tertiary text
+TEXT_ON_DARK = "#F8FAFC" # White for dark backgrounds
+
+# Accent - deep teal, professional, used sparingly
+PRIMARY = "#006D77"      # Deep teal - primary actions
+PRIMARY_DARK = "#005056" # Darker teal for hover states
+PRIMARY_SOFT = "#CCFBF1" # Very light teal for backgrounds/selection
+
+# Status colors - professional, not playful
+SUCCESS = "#006D77"      # Teal for success (matches accent)
+SUCCESS_SOFT = "#CCFBF1"
+WARNING = "#8B5A00"       # Deep amber - serious warnings
+WARNING_SOFT = "#FFE6B3"
+DANGER = "#7F1D1D"        # Deep red - errors, destructive actions
 DANGER_SOFT = "#FEE2E2"
-INFO = "#0891B2"
-INFO_SOFT = "#CFFAFE"
+INFO = "#006D77"          # Teal for info (matches accent)
+INFO_SOFT = "#CCFBF1"
+
+# Spacing scale (in pixels for Qt)
+# 4px base unit: 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48
+SPACING_2XS = 4
+SPACING_XS = 8
+SPACING_S = 12
+SPACING_M = 16
+SPACING_L = 20
+SPACING_XL = 24
+SPACING_2XL = 28
+SPACING_3XL = 32
+
+# Corner radii - sharp for data, subtle for interactive
+RADIUS_NONE = 0        # Tables, cards, data containers
+RADIUS_SM = 2         # Subtle rounding for inputs
+RADIUS_MD = 4         # Buttons, dropdowns
 
 
 STYLESHEET = f"""
+/* =============================================================================
+   VARDIA SHIFT - Professional Attendance Application
+   =============================================================================
+   
+   Design Direction: Professional Utility
+   - Clean, efficient, no-nonsense
+   - Sharp edges for data containers
+   - Deep navy + white + deep teal palette
+   - No gradients, no decorative shadows, no animations
+   ============================================================================= */
+
 * {{
-    font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
     font-size: 13px;
 }}
 
 QWidget {{
     color: {TEXT};
 }}
+
 QMainWindow, QDialog {{
     background: {BG_SOFT};
 }}
 
-/* ---- Sidebar ---- */
+/* ---------------------------------------------------------------------------
+   Sidebar - Deep navy, professional appearance
+   --------------------------------------------------------------------------- */
 #Sidebar {{
     background: {BG};
     border: none;
 }}
+
 #SidebarTitle {{
     color: {TEXT_ON_DARK};
     font-size: 20px;
     font-weight: 700;
-    padding: 4px 0;
+    letter-spacing: 1px;
+    padding: {SPACING_S}px 0;
 }}
+
 #SidebarSubtitle {{
     color: {TEXT_SOFT};
     font-size: 11px;
     letter-spacing: 1px;
+    padding: {SPACING_XS}px 0 {SPACING_M}px 0;
 }}
+
 #SidebarUser {{
     color: {TEXT_ON_DARK};
     font-size: 12px;
     font-weight: 600;
+    padding: {SPACING_XS}px 0;
 }}
+
 #SidebarRole {{
     color: {TEXT_SOFT};
     font-size: 11px;
+    padding: 0 0 {SPACING_XS}px 0;
 }}
 
+/* Navigation buttons - sharp, professional */
 QPushButton#NavButton {{
     background: transparent;
-    color: #CBD5E1;
+    color: {TEXT_SOFT};
     border: none;
-    border-radius: 8px;
-    padding: 11px 14px;
+    border-left: 3px solid transparent;
+    padding: {SPACING_M}px {SPACING_L}px;
     text-align: left;
     font-size: 13px;
     font-weight: 600;
 }}
+
 QPushButton#NavButton:hover {{
-    background: #1E293B;
+    background: rgba(255, 255, 255, 0.05);
     color: {TEXT_ON_DARK};
 }}
+
 QPushButton#NavButton:checked {{
     background: {PRIMARY};
-    color: #FFFFFF;
+    color: {TEXT_ON_DARK};
+    border-left-color: {PRIMARY};
 }}
+
+/* Kiosk button - prominent teal */
 QPushButton#NavKiosk {{
-    background: {SUCCESS};
-    color: #FFFFFF;
+    background: {PRIMARY};
+    color: {TEXT_ON_DARK};
     border: none;
-    border-radius: 8px;
-    padding: 10px 14px;
+    border-left: 3px solid {PRIMARY};
+    padding: {SPACING_M}px {SPACING_L}px;
     font-size: 13px;
     font-weight: 700;
 }}
+
 QPushButton#NavKiosk:hover {{
-    background: #15803D;
+    background: {PRIMARY_DARK};
+    border-left-color: {PRIMARY_DARK};
 }}
+
+/* Logout button - subtle, at bottom */
 QPushButton#NavLogout {{
     background: transparent;
-    color: #94A3B8;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 9px 14px;
+    color: {TEXT_SOFT};
+    border: 1px solid {BORDER};
+    padding: {SPACING_S}px {SPACING_L}px;
     font-size: 12px;
     font-weight: 600;
 }}
+
 QPushButton#NavLogout:hover {{
-    background: #7F1D1D;
-    color: #FFFFFF;
-    border-color: #7F1D1D;
+    background: {DANGER};
+    color: {TEXT_ON_DARK};
+    border-color: {DANGER};
 }}
 
-/* ---- Content ---- */
+/* ---------------------------------------------------------------------------
+   Content Area - Clean white surfaces
+   --------------------------------------------------------------------------- */
 #PageTitle {{
     font-size: 22px;
     font-weight: 700;
     color: {TEXT};
+    letter-spacing: 0.5px;
 }}
+
 #PageSubtitle {{
     font-size: 12px;
     color: {TEXT_MUTED};
+    letter-spacing: 0.5px;
 }}
+
+/* Cards - SHARP edges for data precision */
 #Card {{
     background: {SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_NONE}px;
 }}
+
 #CardTitle {{
     font-size: 14px;
     font-weight: 700;
     color: {TEXT};
+    letter-spacing: 0.5px;
 }}
+
 #CardHint {{
     font-size: 11px;
     color: {TEXT_MUTED};
 }}
+
+/* Hero section - Deep navy with sharp edges */
 #Hero {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {BG}, stop:1 #1E3A8A);
-    border-radius: 14px;
+    background: {BG};
+    border: none;
+    border-radius: {RADIUS_NONE}px;
 }}
+
 #HeroTitle {{
     color: {TEXT_ON_DARK};
     font-size: 26px;
     font-weight: 700;
+    letter-spacing: 2px;
 }}
+
 #HeroSub {{
-    color: #BFDBFE;
+    color: {PRIMARY_SOFT};
     font-size: 13px;
 }}
+
 #HeroValue {{
     color: {TEXT_ON_DARK};
     font-size: 30px;
     font-weight: 700;
 }}
+
 #HeroLabel {{
-    color: #93C5FD;
+    color: {PRIMARY_SOFT};
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 1px;
 }}
 
-/* ---- Stat tiles ---- */
+/* ---------------------------------------------------------------------------
+   Stat Tiles - Clean, data-focused
+   --------------------------------------------------------------------------- */
 #StatValue {{
     font-size: 24px;
     font-weight: 700;
     color: {TEXT};
 }}
+
 #StatLabel {{
     font-size: 11px;
     color: {TEXT_MUTED};
     font-weight: 600;
     letter-spacing: 0.5px;
+    text-transform: uppercase;
 }}
 
-/* ---- Buttons ---- */
+/* ---------------------------------------------------------------------------
+   Buttons - Professional with subtle feedback
+   --------------------------------------------------------------------------- */
 QPushButton {{
     background: {SURFACE};
-    border: 1px solid {BORDER_STRONG};
-    border-radius: 8px;
-    padding: 8px 16px;
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+    padding: {SPACING_S}px {SPACING_L}px;
     color: {TEXT};
     font-weight: 600;
+    min-height: 36px;
 }}
+
 QPushButton:hover {{
     background: {SURFACE_ALT};
-    border-color: {TEXT_SOFT};
+    border-color: {TEXT};
 }}
+
 QPushButton:pressed {{
-    background: #E2E8F0;
+    background: {BORDER};
+    border-color: {BORDER_STRONG};
 }}
+
 QPushButton:disabled {{
     color: {TEXT_SOFT};
     background: {SURFACE_ALT};
     border-color: {BORDER};
 }}
+
+/* Primary buttons - Deep teal */
 QPushButton[variant="primary"] {{
     background: {PRIMARY};
-    color: #FFFFFF;
+    color: {TEXT_ON_DARK};
     border-color: {PRIMARY};
+    border-radius: {RADIUS_MD}px;
 }}
+
 QPushButton[variant="primary"]:hover {{
     background: {PRIMARY_DARK};
+    border-color: {PRIMARY_DARK};
 }}
+
+QPushButton[variant="primary"]:pressed {{
+    background: {PRIMARY};
+    border-color: {PRIMARY};
+}}
+
 QPushButton[variant="primary"]:disabled {{
-    background: #93C5FD;
-    border-color: #93C5FD;
-    color: #EFF6FF;
+    background: {BORDER};
+    border-color: {BORDER};
+    color: {TEXT_SOFT};
 }}
+
+/* Success buttons */
 QPushButton[variant="success"] {{
     background: {SUCCESS};
-    color: #FFFFFF;
+    color: {TEXT_ON_DARK};
     border-color: {SUCCESS};
+    border-radius: {RADIUS_MD}px;
 }}
+
 QPushButton[variant="success"]:hover {{
-    background: #15803D;
+    background: {PRIMARY_DARK};
+    border-color: {PRIMARY_DARK};
 }}
+
+/* Danger buttons */
 QPushButton[variant="danger"] {{
     background: {DANGER};
-    color: #FFFFFF;
+    color: {TEXT_ON_DARK};
     border-color: {DANGER};
+    border-radius: {RADIUS_MD}px;
 }}
+
 QPushButton[variant="danger"]:hover {{
-    background: #B91C1C;
+    background: #5F1515;
+    border-color: #5F1515;
 }}
+
+/* Ghost buttons */
 QPushButton[variant="ghost"] {{
     background: transparent;
-    border-color: {BORDER_STRONG};
+    border-color: {BORDER};
+    border-radius: {RADIUS_MD}px;
 }}
+
+/* Link buttons */
 QPushButton[variant="link"] {{
     background: transparent;
     border: none;
     color: {PRIMARY};
     font-weight: 600;
-    padding: 4px;
+    padding: {SPACING_XS}px;
+    border-radius: {RADIUS_MD}px;
 }}
+
 QPushButton[variant="link"]:hover {{
     color: {PRIMARY_DARK};
     text-decoration: underline;
 }}
 
-/* ---- Inputs ---- */
+/* ---------------------------------------------------------------------------
+   Inputs - Clean, sharp, professional
+   --------------------------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit, QPlainTextEdit, QTextEdit {{
     background: {SURFACE};
-    border: 1px solid {BORDER_STRONG};
-    border-radius: 8px;
-    padding: 8px 10px;
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+    padding: {SPACING_S}px {SPACING_M}px;
     selection-background-color: {PRIMARY};
-    selection-color: #FFFFFF;
+    selection-color: {TEXT_ON_DARK};
+    min-height: 36px;
 }}
+
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus,
 QDateEdit:focus, QTimeEdit:focus, QPlainTextEdit:focus {{
     border: 2px solid {PRIMARY};
-    padding: 7px 9px;
+    padding: {SPACING_S-1}px {SPACING_M-1}px;
 }}
+
 QLineEdit:disabled, QComboBox:disabled {{
     background: {SURFACE_ALT};
     color: {TEXT_SOFT};
+    border-color: {BORDER};
 }}
+
 QLineEdit[invalid="true"] {{
     border: 2px solid {DANGER};
-    padding: 7px 9px;
+    padding: {SPACING_S-1}px {SPACING_M-1}px;
 }}
+
 QLineEdit::placeholder {{
     color: {TEXT_SOFT};
 }}
+
 QComboBox::drop-down {{
     border: none;
     width: 24px;
 }}
+
 QComboBox::down-arrow {{
     image: none;
     border-left: 4px solid transparent;
@@ -279,195 +426,278 @@ QComboBox::down-arrow {{
     border-top: 5px solid {TEXT_MUTED};
     width: 0;
     height: 0;
-    margin-right: 10px;
+    margin-right: {SPACING_S}px;
 }}
+
 QComboBox QAbstractItemView {{
     background: {SURFACE};
-    border: 1px solid {BORDER_STRONG};
+    border: 1px solid {BORDER};
     selection-background-color: {PRIMARY_SOFT};
     selection-color: {TEXT};
     outline: none;
-    padding: 4px;
+    padding: {SPACING_XS}px;
 }}
+
 QCheckBox, QRadioButton {{
-    spacing: 8px;
+    spacing: {SPACING_S}px;
 }}
+
 QCheckBox::indicator, QRadioButton::indicator {{
     width: 18px;
     height: 18px;
-    border: 1px solid {BORDER_STRONG};
+    border: 1px solid {BORDER};
     background: {SURFACE};
 }}
+
 QCheckBox::indicator {{
-    border-radius: 5px;
+    border-radius: {RADIUS_SM}px;
 }}
+
 QRadioButton::indicator {{
     border-radius: 9px;
 }}
+
 QCheckBox::indicator:checked {{
     background: {PRIMARY};
     border-color: {PRIMARY};
     image: none;
 }}
+
 QRadioButton::indicator:checked {{
     background: {PRIMARY};
     border: 5px solid {SURFACE};
     outline: 1px solid {PRIMARY};
 }}
+
 QCheckBox::indicator:disabled {{
     background: {SURFACE_ALT};
     border-color: {BORDER};
 }}
 
-/* ---- Tables & lists ---- */
+/* ---------------------------------------------------------------------------
+   Tables - SHARP edges, data precision
+   --------------------------------------------------------------------------- */
 QTableWidget, QTableView, QListWidget, QTreeWidget {{
     background: {SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 10px;
+    border-radius: {RADIUS_NONE}px;
     gridline-color: {BORDER};
     selection-background-color: {PRIMARY_SOFT};
     selection-color: {TEXT};
     outline: none;
 }}
+
 QTableWidget::item, QTableView::item {{
-    padding: 7px 6px;
+    padding: {SPACING_S}px {SPACING_M}px;
     border: none;
 }}
+
 QTableWidget::item:selected, QTableView::item:selected {{
     background: {PRIMARY_SOFT};
     color: {TEXT};
 }}
+
 QHeaderView::section {{
     background: {SURFACE_ALT};
-    color: {TEXT_MUTED};
-    padding: 9px 8px;
+    color: {TEXT};
+    padding: {SPACING_S}px {SPACING_M}px;
     border: none;
     border-bottom: 2px solid {BORDER};
     font-weight: 700;
     font-size: 11px;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.5px;
     text-align: left;
 }}
+
 QTableCornerButton::section {{
     background: {SURFACE_ALT};
     border: none;
 }}
 
-/* ---- Progress bar ---- */
+/* ---------------------------------------------------------------------------
+   Progress Bar - Clean teal
+   --------------------------------------------------------------------------- */
 QProgressBar {{
     background: {BORDER};
     border: none;
-    border-radius: 6px;
+    border-radius: {RADIUS_NONE}px;
     height: 12px;
     text-align: center;
     color: transparent;
 }}
+
 QProgressBar::chunk {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {PRIMARY}, stop:1 #60A5FA);
-    border-radius: 6px;
+    background: {PRIMARY};
+    border-radius: {RADIUS_NONE}px;
 }}
 
-/* ---- Tabs ---- */
+/* ---------------------------------------------------------------------------
+   Tabs - Underline style, professional
+   --------------------------------------------------------------------------- */
 QTabWidget::pane {{
     border: 1px solid {BORDER};
-    border-radius: 10px;
+    border-radius: {RADIUS_NONE}px;
     background: {SURFACE};
     top: -1px;
 }}
+
 QTabBar::tab {{
     background: transparent;
     color: {TEXT_MUTED};
-    padding: 9px 18px;
-    margin-right: 4px;
+    padding: {SPACING_M}px {SPACING_XL}px;
+    margin-right: {SPACING_XS}px;
     border: none;
     border-bottom: 3px solid transparent;
     font-weight: 600;
 }}
+
 QTabBar::tab:selected {{
     color: {PRIMARY};
     border-bottom-color: {PRIMARY};
 }}
+
 QTabBar::tab:hover {{
     color: {TEXT};
 }}
 
-/* ---- Misc ---- */
+/* ---------------------------------------------------------------------------
+   Group Box - Sharp, clean
+   --------------------------------------------------------------------------- */
 QGroupBox {{
     border: 1px solid {BORDER};
-    border-radius: 10px;
-    margin-top: 14px;
-    padding: 14px 12px 12px 12px;
+    border-radius: {RADIUS_NONE}px;
+    margin-top: {SPACING_XL}px;
+    padding: {SPACING_XL}px {SPACING_L}px {SPACING_L}px {SPACING_L}px;
     background: {SURFACE};
     font-weight: 700;
 }}
+
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 6px;
+    left: {SPACING_L}px;
+    padding: 0 {SPACING_XS}px;
     color: {TEXT};
     font-size: 12px;
+    letter-spacing: 0.5px;
 }}
+
+/* ---------------------------------------------------------------------------
+   Labels - Clear hierarchy
+   --------------------------------------------------------------------------- */
 QLabel[role="field"] {{
     font-weight: 600;
     color: {TEXT};
     font-size: 12px;
+    letter-spacing: 0.5px;
 }}
+
 QLabel[role="hint"] {{
     color: {TEXT_MUTED};
     font-size: 11px;
 }}
+
 QLabel[role="error"] {{
     color: {DANGER};
     font-size: 11px;
     font-weight: 600;
 }}
+
 QLabel[role="success"] {{
     color: {SUCCESS};
     font-size: 12px;
     font-weight: 600;
 }}
+
 QLabel[role="warning"] {{
     color: {WARNING};
     font-size: 12px;
     font-weight: 600;
 }}
+
 QLabel[role="mono"] {{
-    font-family: "Cascadia Mono", "Consolas", "SF Mono", monospace;
+    font-family: "Cascadia Mono", "Consolas", "SF Mono", "Courier New", monospace;
     font-size: 11px;
     color: {TEXT_MUTED};
 }}
+
+/* ---------------------------------------------------------------------------
+   Dividers & Splitters
+   --------------------------------------------------------------------------- */
 #Divider {{
     background: {BORDER};
     max-height: 1px;
     min-height: 1px;
     border: none;
 }}
+
 QSplitter::handle {{
     background: {BORDER};
 }}
+
+/* ---------------------------------------------------------------------------
+   Scroll Areas
+   --------------------------------------------------------------------------- */
 QScrollArea {{
     border: none;
     background: transparent;
 }}
+
+/* ---------------------------------------------------------------------------
+   Status Bar
+   --------------------------------------------------------------------------- */
 QStatusBar {{
     background: {SURFACE};
     border-top: 1px solid {BORDER};
     color: {TEXT_MUTED};
+    font-size: 12px;
 }}
+
 QStatusBar::item {{ border: none; }}
+
+/* ---------------------------------------------------------------------------
+   Tooltips
+   --------------------------------------------------------------------------- */
 QToolTip {{
     background: {BG};
-    color: #FFFFFF;
+    color: {TEXT_ON_DARK};
     border: none;
-    border-radius: 6px;
-    padding: 6px 9px;
+    border-radius: {RADIUS_SM}px;
+    padding: {SPACING_XS}px {SPACING_S}px;
+    font-size: 12px;
 }}
+
+/* ---------------------------------------------------------------------------
+   Message Boxes
+   --------------------------------------------------------------------------- */
 QMessageBox {{
     background: {SURFACE};
 }}
+
 QMessageBox QLabel {{
     font-size: 13px;
+}}
+
+/* ---------------------------------------------------------------------------
+   Kiosk-specific - Full screen, high contrast
+   --------------------------------------------------------------------------- */
+KioskWindow {{
+    background: {BG};
+}}
+
+KioskWindow #Hero {{
+    background: {BG};
+    border: none;
+    border-radius: {RADIUS_NONE}px;
+}}
+
+KioskWindow QLabel[role="field"] {{
+    font-size: 14px;
+}}
+
+KioskWindow QLineEdit {{
+    font-size: 16px;
+    min-height: 48px;
+    padding: {SPACING_M}px {SPACING_L}px;
 }}
 """
 
@@ -490,9 +720,9 @@ def apply_theme(app) -> None:
     palette.setColor(QPalette.Button, QColor(SURFACE))
     palette.setColor(QPalette.ButtonText, QColor(TEXT))
     palette.setColor(QPalette.Highlight, QColor(PRIMARY))
-    palette.setColor(QPalette.HighlightedText, QColor("#FFFFFF"))
+    palette.setColor(QPalette.HighlightedText, QColor(TEXT_ON_DARK))
     palette.setColor(QPalette.ToolTipBase, QColor(BG))
-    palette.setColor(QPalette.ToolTipText, QColor("#FFFFFF"))
+    palette.setColor(QPalette.ToolTipText, QColor(TEXT_ON_DARK))
     app.setPalette(palette)
     app.setStyleSheet(STYLESHEET)
 

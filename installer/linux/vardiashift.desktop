@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=VardiaShift
+GenericName=Employee attendance
+Comment=Standalone employee time-in / time-out and attendance management
+# Replaced by install.sh with the absolute path of the installed executable.
+Exec=vardiashift
+Icon=vardiashift
+Path=VARDIASHIFT_APP_DIR
+Terminal=false
+Categories=Office;
+Keywords=attendance;timesheet;employee;work hours;shift;
+StartupNotify=true
+# Must match the WM_CLASS Qt sets, or the window gets a second entry with a
+# blank icon instead of reusing this one.
+StartupWMClass=vardiashift
