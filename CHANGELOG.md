@@ -3,6 +3,16 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+* The icon integration test compared a Pillow-compressed PNG byte for byte, and
+  the launcher test read a POSIX mode bit on Windows, so both failed on the
+  Windows runner while passing on Linux. The icon is now compared by layout and
+  pixels, and the execute bit is read from the git index off POSIX. Test-only;
+  the application is unchanged. Files: `tests/test_desktop_integration.py`.
+
 ## [1.3.0] - 2026-10-16
 
 ### Added

@@ -55,6 +55,26 @@ def _ico_entries(path: Path):
         )
 
 
+def _ico_layout(path: Path) -> list[tuple[int, bool]]:
+    """(size, is_png) for each entry, in the order they are stored."""
+    return [
+        (width, blob[:8] == PNG_MAGIC)
+        for width, _h, _p, _b, blob in _ico_entries(path)
+    ]
+
+
+def _ico_frames(path: Path) -> dict[tuple[int, int], bytes]:
+    """Every frame's RGBA pixels, read back through Pillow."""
+    from PIL import Image
+
+    frames = {}
+    with Image.open(path) as icon:
+        for size in icon.info["sizes"]:
+            icon.size = size
+            frames[size] = icon.convert("RGBA").tobytes()
+    return frames
+
+
 # -- the shipped icon --------------------------------------------------------
 def test_icon_file_exists():
     assert (ROOT / "assets" / "icon.png").is_file()
@@ -95,7 +115,14 @@ def test_rebuilding_the_icon_is_stable(tmp_path):
 
     target = tmp_path / "icon.ico"
     module.build(ROOT / "assets" / "icon.png", target)
-    assert target.read_bytes() == (ROOT / "assets" / "icon.ico").read_bytes()
+
+    # Compared as layout plus pixels rather than as bytes: the 256px entry is
+    # compressed by Pillow, whose PNG output depends on the libpng/zlib build,
+    # so the same image is not the same bytes on Windows and Linux. The layout
+    # half still catches a generator that stops writing DIB entries.
+    committed = ROOT / "assets" / "icon.ico"
+    assert _ico_layout(target) == _ico_layout(committed)
+    assert _ico_frames(target) == _ico_frames(committed)
 
 
 # -- icon sizes --------------------------------------------------------------
@@ -121,9 +148,27 @@ def test_generated_icon_has_the_size_its_folder_claims(tmp_path):
 
 
 # -- desktop entry -----------------------------------------------------------
+def _install_script_is_executable() -> bool:
+    """Whether install.sh ships with the execute bit set.
+
+    A POSIX checkout gets the bit from git, but Windows reports no execute bit
+    at all for a .sh file, so there the bit has to be read back from the index
+    - which is what sets it on every other platform.
+    """
+    if os.name == "nt":
+        staged = subprocess.run(
+            ["git", "ls-files", "--stage", "--", "installer/linux/install.sh"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        return staged.stdout.startswith("100755")
+    return bool((INSTALLER / "install.sh").stat().st_mode & 0o111)
+
+
 def test_desktop_file_is_present_and_executable_flagged():
     assert DESKTOP_FILE.is_file()
-    assert (INSTALLER / "install.sh").stat().st_mode & 0o111, "install.sh is not executable"
+    assert _install_script_is_executable(), "install.sh is not executable"
 
 
 def test_desktop_entry_declares_an_application():
