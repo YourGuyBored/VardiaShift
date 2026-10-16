@@ -3,7 +3,7 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-16
 
 ### Added
 
@@ -20,6 +20,8 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Changed
 
+* Version bumped to `1.4.0` in `APP_VERSION`, `pyproject.toml` and the installer
+  default, so the tag, the footer the app draws and the installer all agree.
 * Settings form fields no longer stretch across the whole window - a two-line
   text box was 900px wide on a 1360px window. They stop at a readable width and
   stay left-aligned under their labels. Files: `app/ui/settings.py`.
