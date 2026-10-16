@@ -124,6 +124,9 @@ class KioskWindow(QMainWindow):
         self._clock_timer.setInterval(1_000)
         self._clock_timer.timeout.connect(self._tick)
         self._clock_timer.start()
+        # Fill the clock now instead of showing a literal 00:00 until the
+        # first tick a second later.
+        self._tick()
 
         self._reset_timer = QTimer(self)
         self._reset_timer.setSingleShot(True)
@@ -246,13 +249,13 @@ class KioskWindow(QMainWindow):
         self._result_name = QLabel("")
         self._result_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_name.setWordWrap(True)
-        self._result_name.setObjectName("value")
+        self._result_name.setProperty("role", "value")
         layout.addWidget(self._result_name)
 
         self._result_meta = QLabel("")
         self._result_meta.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_meta.setWordWrap(True)
-        self._result_meta.setObjectName("mono")
+        self._result_meta.setProperty("role", "mono")
         layout.addWidget(self._result_meta)
 
         divider = QFrame()

@@ -391,6 +391,22 @@ def test_qr_page_generates_action_codes(context, qt_app, admin_session):
     assert context.qr.get_token(QR_TIME_IN) is not None
 
 
+def test_qr_page_tabs_scroll_and_the_preview_is_a_square(context, qt_app, admin_session):
+    """The actions tab was taller than the window, and the white plate behind
+    the code stretched to the full card width."""
+    from PySide6.QtWidgets import QScrollArea
+
+    from app.ui.qr_management import QRManagementPage
+
+    page = QRManagementPage(context)
+    for index in range(page._tabs.count()):
+        assert isinstance(page._tabs.widget(index), QScrollArea)
+
+    preview = page._action_preview
+    assert preview._image.width() == preview._image.height()
+    assert preview._image.width() == preview._image.minimumWidth()
+
+
 def test_qr_page_lists_employee_codes(context, qt_app, team):
     from app.ui.qr_management import QRManagementPage
 
@@ -443,6 +459,37 @@ def test_reports_page_generates_each_type(context, qt_app, team):
         page._type_box.setCurrentIndex(index)
         assert page._report is not None
         assert page._report.headers
+
+
+def test_reports_toolbar_shows_only_the_controls_the_type_uses(context, qt_app, team):
+    """The toolbar used to show an unlabelled date box beside a stray "From"
+    and "To" label, and never applied the chosen type until you changed it."""
+    from app.ui.reports import ReportsPage
+
+    page = ReportsPage(context)
+    assert page._type_box.currentData() == "daily"
+    assert not page._day.isHidden()
+    assert not page._day_label.isHidden()
+    assert page._week_box.isHidden()
+    assert page._from_date.isHidden() and page._from_label.isHidden()
+    assert page._to_date.isHidden() and page._to_label.isHidden()
+
+    page._type_box.setCurrentIndex(1)  # weekly
+    assert not page._week_box.isHidden()
+    assert page._day.isHidden()
+    assert page._from_date.isHidden()
+
+    index = next(
+        i
+        for i in range(page._type_box.count())
+        if page._type_box.itemData(i) == "range"
+    )
+    page._type_box.setCurrentIndex(index)
+    assert not page._from_date.isHidden()
+    assert not page._from_label.isHidden()
+    assert not page._to_date.isHidden()
+    assert not page._to_label.isHidden()
+    assert page._day.isHidden() and page._week_box.isHidden()
 
 
 def test_reports_page_filters_by_employee(context, qt_app, team):
@@ -1376,6 +1423,45 @@ def test_two_step_mode_unchanged_when_auto_mode_off(
 
 
 # -- phone settings UI -------------------------------------------------------
+def test_settings_tabs_scroll_instead_of_crushing_their_form(
+    context, qt_app, admin_session
+):
+    """A tab taller than the window used to be squeezed past its own minimum,
+    and Qt drew the lower rows on top of the ones above them."""
+    from PySide6.QtWidgets import QScrollArea
+
+    from app.ui.settings import SettingsPage
+
+    page = SettingsPage(context)
+    assert page._tabs.count() > 0
+    for index in range(page._tabs.count()):
+        area = page._tabs.widget(index)
+        assert isinstance(area, QScrollArea)
+        assert area.widget() is not None
+        assert area.widgetResizable()
+
+
+def test_settings_form_fields_stop_at_a_readable_width(
+    context, qt_app, admin_session
+):
+    """A form field used to grow with the window, so a two-line text box was
+    900px wide on a 1360px window."""
+    from app.ui.settings import FIELD_WIDTH, SettingsPage
+
+    page = SettingsPage(context)
+    assert page._editors
+    for key, editor in page._editors.items():
+        assert editor.maximumWidth() == FIELD_WIDTH, key
+
+
+def test_settings_backup_summary_uses_the_mono_role(context, qt_app, admin_session):
+    from app.ui.settings import SettingsPage
+
+    page = SettingsPage(context)
+    assert page._info_label.property("role") == "mono"
+    assert "database" in page._info_label.text()
+
+
 def test_settings_has_phone_tab_with_service_controls(
     context, qt_app, admin_session
 ):
@@ -1427,6 +1513,141 @@ def test_settings_phone_start_refuses_when_disabled(
     page._start_phone()
     assert context.phone.running is False
     assert messages, "the admin must be told to enable phone attendance first"
+
+
+def test_settings_phone_firewall_controls_need_no_probe_to_build(
+    context, qt_app, admin_session, monkeypatch
+):
+    from app.phone import firewall
+    from app.ui.settings import SettingsPage
+
+    def explode(*args, **kwargs):
+        raise AssertionError("building the settings page must not probe the firewall")
+
+    monkeypatch.setattr(firewall, "detect", explode)
+    page = SettingsPage(context)
+    assert hasattr(page, "_phone_firewall")
+    assert hasattr(page, "_phone_firewall_allow")
+    assert hasattr(page, "_phone_firewall_remove")
+    assert page._phone_firewall.text(), "the button needs a reason to exist"
+    assert page._phone_firewall_remove.isHidden()
+
+
+def _firewall_state(status: str, port: int = 8123):
+    from app.phone import firewall
+
+    enabled = {firewall.ALLOWED: True, firewall.BLOCKED: True}.get(status)
+    present = {firewall.ALLOWED: True, firewall.BLOCKED: False}.get(status)
+    return firewall.Firewall("windows", enabled, present, status, f"detail for {status}")
+
+
+@pytest.mark.parametrize(
+    "status, allow_shown, remove_shown",
+    [
+        ("blocked", True, False),
+        ("unknown", True, False),
+        ("allowed", False, True),
+        ("not-needed", False, False),
+        ("unsupported", False, False),
+    ],
+)
+def test_settings_phone_firewall_offers_the_matching_button(
+    context, qt_app, admin_session, monkeypatch, status, allow_shown, remove_shown
+):
+    from app.phone import firewall
+    from app.ui.settings import SettingsPage
+
+    state = _firewall_state(status)
+    monkeypatch.setattr(firewall, "detect", lambda port, **kw: state)
+    page = SettingsPage(context)
+    page._refresh_firewall()
+    assert (not page._phone_firewall_allow.isHidden()) is allow_shown
+    assert (not page._phone_firewall_remove.isHidden()) is remove_shown
+    assert page._phone_firewall.text() == state.detail
+
+
+def test_settings_phone_firewall_allow_runs_one_elevated_change(
+    context, qt_app, admin_session, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.phone import firewall
+    from app.ui.settings import SettingsPage
+
+    state = {"status": "blocked"}
+    asked: list = []
+
+    def fake_allow(port):
+        asked.append(port)
+        state["status"] = "allowed"
+        return firewall.AllowResult(
+            True, _firewall_state("allowed"), "Phones are now allowed through."
+        )
+
+    monkeypatch.setattr(
+        firewall, "detect", lambda port, **kw: _firewall_state(state["status"])
+    )
+    monkeypatch.setattr(firewall, "allow", fake_allow)
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok),
+    )
+    page = SettingsPage(context)
+    page._allow_phone_firewall()
+    assert asked == [context.settings.settings.phone_port]
+    assert not page._phone_firewall_remove.isHidden()
+
+
+def test_settings_phone_firewall_reports_a_refused_change(
+    context, qt_app, admin_session, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.phone import firewall
+    from app.ui.settings import SettingsPage
+
+    monkeypatch.setattr(
+        firewall, "detect", lambda port, **kw: _firewall_state("blocked")
+    )
+    monkeypatch.setattr(
+        firewall,
+        "allow",
+        lambda port: firewall.AllowResult(
+            False, _firewall_state("blocked"), "The request was cancelled."
+        ),
+    )
+    warnings: list = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        staticmethod(lambda *a, **k: warnings.append(a[2]) or QMessageBox.StandardButton.Ok),
+    )
+    page = SettingsPage(context)
+    page._allow_phone_firewall()
+    assert warnings == ["The request was cancelled."]
+
+
+def test_settings_phone_start_reports_the_firewall_state(
+    context, qt_app, admin_session, monkeypatch
+):
+    from app.phone import firewall
+    from app.ui.settings import SettingsPage
+
+    context.settings.set("phone_enabled", True, "admin")
+    context.settings.set("phone_port", 48233, "admin")
+    probed: list = []
+    monkeypatch.setattr(
+        firewall,
+        "detect",
+        lambda port, **kw: probed.append(port) or _firewall_state("blocked"),
+    )
+    page = SettingsPage(context)
+    try:
+        page._start_phone()
+        assert 48233 in probed, "a started service should say what the firewall thinks"
+    finally:
+        context.phone.stop()
 
 
 def test_qr_page_phone_checkin_preview(context, qt_app, team, monkeypatch):

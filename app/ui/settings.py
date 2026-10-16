@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -23,9 +24,9 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
-    QTextEdit,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
@@ -46,10 +47,15 @@ from app.models.settings import (
 )
 from app.services.backup_service import BackupError
 from app.ui import theme
-from app.ui.widgets import Card, PrimaryButton, Select
+from app.ui.widgets import Card, GhostButton, PrimaryButton, Select
 from app.utils.appearance import ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT
 
 BACKUP_COLUMNS = ["File", "Created", "Size"]
+
+#: A form field wider than this reads worse than the short value inside it.
+#: The label column is narrow, so the rest of the row would otherwise stretch
+#: a two-line text box across the whole window.
+FIELD_WIDTH = 440
 TAB_BACKUP = "Backup"
 
 #: Tab labels are shorter than the group names: ten full-length tabs do not fit
@@ -134,8 +140,8 @@ class SettingsPage(QWidget):
         self._tabs = QTabWidget()
         self._configure_tab_bar()
         for group in GROUPS:
-            self._tabs.addTab(self._build_group(group), tab_label(group))
-        self._tabs.addTab(self._build_backup_tab(), TAB_BACKUP)
+            self._tabs.addTab(self._scrollable(self._build_group(group)), tab_label(group))
+        self._tabs.addTab(self._scrollable(self._build_backup_tab()), TAB_BACKUP)
         root.addWidget(self._tabs, 1)
 
         actions = QHBoxLayout()
@@ -168,6 +174,20 @@ class SettingsPage(QWidget):
         bar.setUsesScrollButtons(True)
         bar.setElideMode(Qt.TextElideMode.ElideRight)
         bar.setToolTip("Settings groups - use the arrows to reach the rest")
+
+    def _scrollable(self, page: QWidget) -> QScrollArea:
+        """Wrap a tab so a short window scrolls it instead of crushing it.
+
+        A form taller than the tab gets squeezed past its own minimum and Qt
+        draws the labels on top of each other. The first-run window solves the
+        same problem the same way.
+        """
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        area.setWidget(page)
+        return area
 
     def _header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -414,6 +434,7 @@ class SettingsPage(QWidget):
 
         for spec in self.context.settings.settings.specs_for_group(group):
             editor = self._editor_for(spec)
+            editor.setMaximumWidth(FIELD_WIDTH)
             self._editors[spec.key] = editor
             label = QLabel(spec.label)
             label.setProperty("role", "field")
@@ -442,7 +463,7 @@ class SettingsPage(QWidget):
         return page
 
     def _build_phone_status_card(self) -> QWidget:
-        """Live server controls: status, address, start/stop."""
+        """Live server controls: status, address, start/stop, firewall."""
         from app.phone.server import lan_warning
 
         card = Card("Phone service", "")
@@ -456,7 +477,7 @@ class SettingsPage(QWidget):
         self._phone_url.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self._phone_url.setObjectName("mono")
+        self._phone_url.setProperty("role", "mono")
         card.add(self._phone_url)
 
         row = QHBoxLayout()
@@ -479,6 +500,25 @@ class SettingsPage(QWidget):
         hint.setObjectName("CardHint")
         card.add(hint)
 
+        self._phone_firewall = QLabel("")
+        self._phone_firewall.setWordWrap(True)
+        self._phone_firewall.setObjectName("CardHint")
+        card.add(self._phone_firewall)
+
+        firewall_row = QHBoxLayout()
+        firewall_row.setSpacing(8)
+        self._phone_firewall_allow = PrimaryButton(
+            "Allow phones through the firewall", self._allow_phone_firewall
+        )
+        firewall_row.addWidget(self._phone_firewall_allow)
+        self._phone_firewall_remove = GhostButton(
+            "Remove firewall rule", self._remove_phone_firewall
+        )
+        firewall_row.addWidget(self._phone_firewall_remove)
+        firewall_row.addStretch(1)
+        card.add_layout(firewall_row)
+        self._describe_firewall()
+
         warning = lan_warning()
         if warning:
             self._phone_lan_warning = QLabel(warning)
@@ -486,6 +526,10 @@ class SettingsPage(QWidget):
             self._phone_lan_warning.setProperty("role", "warning")
             card.add(self._phone_lan_warning)
         self._refresh_phone_status()
+        if self.context.phone.running:
+            # The service may have auto-started with the app; if so, the card
+            # should say what the firewall thinks rather than guess.
+            self._refresh_firewall()
         return card
 
     def _refresh_phone_status(self) -> None:
@@ -526,10 +570,61 @@ class SettingsPage(QWidget):
         if not ok:
             QMessageBox.warning(self, "Could not start", message)
         self._refresh_phone_status()
+        if ok:
+            # Loopback is never filtered, so a service that starts fine can
+            # still be unreadable from a phone. Say which it is.
+            self._refresh_firewall()
 
     def _stop_phone(self) -> None:
         self.context.phone.stop()
         self._refresh_phone_status()
+
+    # -- phone firewall ------------------------------------------------------
+    def _describe_firewall(self) -> None:
+        """What the button is for, before anything has been probed."""
+        self._phone_firewall.setText(
+            "A phone on the same Wi-Fi cannot open the check-in page when the "
+            "computer's firewall has no exception for it. The button below "
+            "adds one for this port, from the local network only."
+        )
+        self._phone_firewall_remove.hide()
+
+    def _refresh_firewall(self) -> None:
+        """Ask the firewall what it thinks, and offer the matching button."""
+        from app.phone import firewall
+
+        if not hasattr(self, "_phone_firewall"):
+            return
+        port = self.context.settings.settings.phone_port
+        state = firewall.detect(port)
+        self._phone_firewall.setText(state.detail)
+        self._phone_firewall_allow.setVisible(
+            state.status in (firewall.BLOCKED, firewall.UNKNOWN)
+        )
+        self._phone_firewall_remove.setVisible(state.status == firewall.ALLOWED)
+
+    def _allow_phone_firewall(self) -> None:
+        from app.phone import firewall
+
+        self._run_firewall_change(firewall.allow)
+
+    def _remove_phone_firewall(self) -> None:
+        from app.phone import firewall
+
+        self._run_firewall_change(firewall.remove)
+
+    def _run_firewall_change(self, change) -> None:
+        """Run one elevated change. The OS prompt can sit open for a while."""
+        port = self.context.settings.settings.phone_port
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            result = change(port)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._refresh_firewall()
+        (QMessageBox.information if result.ok else QMessageBox.warning)(
+            self, "Firewall", result.message
+        )
 
     def _build_sheets_status_card(self) -> QWidget:
         """Service-account key status and setup shortcut."""
@@ -709,9 +804,13 @@ class SettingsPage(QWidget):
         layout.addLayout(top)
 
         info = Card("Database", "")
-        self._info_label = QTextEdit()
-        self._info_label.setReadOnly(True)
-        self._info_label.setMaximumHeight(150)
+        self._info_label = QLabel("")
+        self._info_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._info_label.setWordWrap(True)
+        self._info_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._info_label.setProperty("role", "mono")
         info.add(self._info_label)
         layout.addWidget(info)
 
@@ -840,7 +939,7 @@ class SettingsPage(QWidget):
     def _load_info(self) -> None:
         info = self.context.backups.database_info()
         lines = [f"{label:<14}{value}" for label, value in info.items()]
-        self._info_label.setPlainText("\n".join(lines))
+        self._info_label.setText("\n".join(lines))
 
     # -- save ----------------------------------------------------------------
     def save(self) -> None:
@@ -913,8 +1012,8 @@ class SettingsPage(QWidget):
                 widget.deleteLater()
         self._editors.clear()
         for group in GROUPS:
-            self._tabs.addTab(self._build_group(group), tab_label(group))
-        self._tabs.addTab(self._build_backup_tab(), TAB_BACKUP)
+            self._tabs.addTab(self._scrollable(self._build_group(group)), tab_label(group))
+        self._tabs.addTab(self._scrollable(self._build_backup_tab()), TAB_BACKUP)
         if 0 <= current < self._tabs.count():
             self._tabs.setCurrentIndex(current)
 

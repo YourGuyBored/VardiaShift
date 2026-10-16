@@ -11,12 +11,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -54,11 +56,17 @@ class QRPreview(QWidget):
 
         self._image = QLabel()
         self._image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image.setMinimumSize(260, 260)
+        # Fixed and centred: a stretching label turned the white plate into a
+        # wide band with a small code marooned in the middle of it.
+        self._image.setFixedSize(232, 232)
         self._image.setStyleSheet(
-            f"background: #FFFFFF; border: 1px solid {theme.BORDER}; border-radius: 12px;"
+            f"background: #FFFFFF; border: 1px solid {theme.BORDER};"
         )
-        layout.addWidget(self._image)
+        image_row = QHBoxLayout()
+        image_row.addStretch(1)
+        image_row.addWidget(self._image)
+        image_row.addStretch(1)
+        layout.addLayout(image_row)
 
         self._subtitle = QLabel(subtitle)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -66,22 +74,29 @@ class QRPreview(QWidget):
         self._subtitle.setObjectName("CardHint")
         layout.addWidget(self._subtitle)
 
-        self._payload = QTextEdit()
-        self._payload.setReadOnly(True)
-        self._payload.setMaximumHeight(58)
-        self._payload.setObjectName("mono")
+        # A read-only label, not a text box: a text box reports a minimum
+        # height taller than the box we want, so the layout crushed it and the
+        # payload was drawn half cut off.
+        self._payload = QLabel("")
+        self._payload.setTextFormat(Qt.TextFormat.PlainText)
+        self._payload.setWordWrap(True)
+        self._payload.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._payload.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._payload.setProperty("role", "mono")
         layout.addWidget(self._payload)
 
     def set_content(self, image: Path | str, title: str, subtitle: str, payload: str = "") -> None:
         self._title.setText(title)
         self._subtitle.setText(subtitle)
-        self._payload.setPlainText(payload)
+        self._payload.setText(payload)
         pixmap = QPixmap(str(image))
         if not pixmap.isNull():
             self._image.setPixmap(
                 pixmap.scaled(
-                    256,
-                    256,
+                    216,
+                    216,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
@@ -195,12 +210,21 @@ class QRManagementPage(QWidget):
         root.addLayout(self._header())
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_actions_tab(), "Time In / Time Out")
-        self._tabs.addTab(self._build_employee_tab(), "Employee QR codes")
-        self._tabs.addTab(self._build_help_tab(), "How it works")
+        self._tabs.addTab(self._scrollable(self._build_actions_tab()), "Time In / Time Out")
+        self._tabs.addTab(self._scrollable(self._build_employee_tab()), "Employee QR codes")
+        self._tabs.addTab(self._scrollable(self._build_help_tab()), "How it works")
         root.addWidget(self._tabs, 1)
 
         self.refresh()
+
+    def _scrollable(self, page: QWidget) -> QScrollArea:
+        """Wrap a tab so a short window scrolls it instead of crushing it."""
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        area.setWidget(page)
+        return area
 
     # -- header --------------------------------------------------------------
     def _header(self) -> QHBoxLayout:
@@ -365,7 +389,7 @@ class QRManagementPage(QWidget):
         card = Card("How the two-step scan works", "")
         steps = QTextEdit()
         steps.setReadOnly(True)
-        steps.setStyleSheet(f"background: {theme.SURFACE_ALT}; border-radius: 8px;")
+        steps.setStyleSheet(f"background: {theme.SURFACE_ALT};")
         steps.setPlainText(
             "STEP 1 - Employee arrives\n"
             "    1. Employee holds their personal QR code.\n"

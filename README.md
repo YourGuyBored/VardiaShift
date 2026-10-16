@@ -65,6 +65,10 @@ accent colour for whatever is live. You choose that accent in Settings.
 <td width="50%"><b>First run.</b> Create the administrator account and pick the organisation type.<br>
 <img src="assets/screenshots/setup.png" width="440" alt="First-run setup"></td>
 </tr>
+<tr>
+<td colspan="2"><b>Settings &rarr; Phone.</b> Let employees clock in from their own phone over the local Wi-Fi. One button adds the firewall exception for the phone port - nothing is forwarded to the internet.<br>
+<img src="assets/screenshots/phone.png" width="900" alt="Phone settings, including the one-click firewall exception"></td>
+</tr>
 </table>
 
 ---
@@ -270,7 +274,7 @@ screen with a live clock:
 The kiosk fills the screen by default so it reads well from a distance. It
 stays a normal window you can drag, resize and minimize, and **F11** toggles
 fullscreen either way. If you would rather it always open as a movable
-window, turn off *Kiosk fullscreen* in Settings → Attendance Kiosk - the
+window, turn off *Kiosk fullscreen* in Settings → Kiosk - the
 setting is honoured, and the window keeps its size and position between
 sessions.
 
@@ -338,9 +342,11 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 Employees can also clock in and out from their phone browser - nothing to
 install, no accounts, no typing:
 
-1. In VardiaShift, open **Settings → Phone Attendance**, tick
-   *Enable phone attendance*, save, and press **Start service**. The panel
-   shows the exact base address for phones.
+1. In VardiaShift, open **Settings → Phone**, tick
+   *Enable phone attendance*, and save. Press **Start service**; the panel
+   shows the exact base address for phones. If it also says the computer's
+   firewall is blocking the port, press **Allow phones through the firewall**
+   and approve the prompt your operating system shows.
 2. On the **QR Codes** page, select an employee and press
    **Phone clock-in / out QR**. Print it or show it on screen.
 3. The employee joins the **same Wi-Fi** as the VardiaShift computer and points
@@ -378,17 +384,27 @@ Details worth knowing:
   either.
 * Phone records appear as **Phone** in the dashboard, attendance views and
   reports, alongside Desktop and Admin-correction entries.
+* The firewall part is one button. **Allow phones through the firewall** asks
+  your operating system to add a single inbound rule named *VardiaShift phone
+  check-in*, for the check-in port and your local network only - never the
+  internet, never your whole network. The prompt is the operating system's own
+  and declining it changes nothing; VardiaShift never escalates on its own.
+  When the rule is in place the button gives way to **Remove firewall rule**,
+  which takes it back out. The rule is scoped to the port and the subnet, not
+  to the VardiaShift program, so moving or updating the app leaves it valid.
+* Uninstalling does not remove the rule, because the uninstaller runs without
+  administrator rights. Press **Remove firewall rule** first, or delete
+  *VardiaShift phone check-in* in your firewall settings afterwards.
 * If the service won't start, the port is probably busy - change
-  *Phone service port* (default `8123`) and make sure the computer's
-  firewall allows it on private networks. The status panel shows the exact
-  address phones should open.
+  *Phone service port* (default `8123`) and press **Start service** again. The
+  status panel shows the exact address phones should open.
 * **The page opens on this computer but not on a phone.** Two causes. If a
   VPN or Tailscale is connected it can own the default route, and the code
   would encode the tunnel's address - reachable from the PC and no phone.
   VardiaShift spots that and refuses to print the code, and Settings names the
   address; disconnect the VPN or join the office network. Otherwise the
-  computer's firewall is blocking incoming connections: allow VardiaShift (or
-  port `8123`) on private networks.
+  computer's firewall is blocking incoming connections: press **Allow phones
+  through the firewall** in Settings and approve the prompt.
 
 ## Administrator workflow
 
@@ -457,7 +473,7 @@ One-time setup (about five minutes, needs internet once):
 3. Open your spreadsheet and **Share** it with the service account's email
    address (Editor role). The address is inside the JSON file as
    `client_email`.
-4. In VardiaShift: **Settings → Google Sheets** → *Choose service account
+4. In VardiaShift: **Settings → Sheets** → *Choose service account
    file…*, pick the JSON key, tick *Enable Google Sheets export*, paste the
    **Spreadsheet ID** (the long part of the sheet URL between `/d/` and
    `/edit`), and save.

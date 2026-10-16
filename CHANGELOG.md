@@ -5,8 +5,57 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+* Phone attendance now offers a one-click **Allow phones through the firewall**
+  button in Settings. It detects the host firewall (Windows Defender Firewall,
+  or ufw/firewalld on Linux), says plainly whether the check-in port is already
+  reachable from the local network, and - only when you press it - asks the
+  operating system for one inbound exception scoped to the check-in port and
+  the local subnet. There is no silent escalation, no UPnP, and no router
+  port-forwarding; the OS prompt is always yours to decline. A **Remove
+  firewall rule** button takes the exception back out. Files:
+  `app/phone/firewall.py`, `app/phone/__init__.py`, `app/ui/settings.py`,
+  `tests/test_firewall.py`, `tests/test_ui.py`.
+
+### Changed
+
+* Settings form fields no longer stretch across the whole window - a two-line
+  text box was 900px wide on a 1360px window. They stop at a readable width and
+  stay left-aligned under their labels. Files: `app/ui/settings.py`.
+* Panels that had drifted onto an 8-12px corner radius - the QR preview, the QR
+  step list and the report summary strip - now use the same hard edges as every
+  other surface. Files: `app/ui/qr_management.py`, `app/ui/reports.py`.
+* Screenshots in the README were re-rendered, and the new Settings -> Phone
+  screen joined the gallery. The README now names three Settings tabs the way
+  the tab bar labels them - Kiosk, Phone and Sheets - instead of by their longer
+  internal group names. Files: `assets/screenshots/`, `scripts/shoot_ui.py`,
+  `README.md`.
+
 ### Fixed
 
+* **Two Settings tabs, and the QR Codes page, were taller than the window, and
+  Qt answered by drawing the lower rows on top of the ones above them.** Every
+  Settings tab and every QR Codes tab now scrolls, the way the first-run window
+  already did. Files: `app/ui/settings.py`, `app/ui/qr_management.py`.
+* **The Reports toolbar showed an unlabelled date box next to a stray "From"
+  and "To".** Each control is labelled and only appears when the chosen report
+  type uses it, and the toolbar now applies the type on first load rather than
+  only when you change it. Files: `app/ui/reports.py`.
+* The Backup tab's database summary was a read-only text box whose own minimum
+  height was taller than the box it was given, so the last row was drawn cut in
+  half. It is a label now. Files: `app/ui/settings.py`.
+* The QR preview's payload was squeezed into a text box in the same way and drew
+  half cut off, and its white plate stretched the full width of the card. Files:
+  `app/ui/qr_management.py`.
+* The attendance kiosk showed a literal `00:00` until its clock ticked a second
+  later. Files: `app/ui/attendance_kiosk.py`.
+* Four labels asked for the monospace text style by object name, which no rule
+  in the stylesheet matches, so they silently kept the body font. They now set
+  the `role` property the stylesheet actually keys on, which lines up the
+  Backup tab's database summary and the QR payload. Files:
+  `app/ui/settings.py`, `app/ui/qr_management.py`, `app/ui/admin_account.py`,
+  `app/ui/attendance_kiosk.py`.
 * The icon integration test compared a Pillow-compressed PNG byte for byte, and
   the launcher test read a POSIX mode bit on Windows, so both failed on the
   Windows runner while passing on Linux. The icon is now compared by layout and

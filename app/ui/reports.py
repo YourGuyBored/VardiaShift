@@ -88,33 +88,41 @@ class ReportsPage(QWidget):
         self._type_box.currentIndexChanged.connect(self._on_type_changed)
         toolbar.addWidget(self._type_box, 1)
 
+        # Every control is labelled, and only the ones the chosen report type
+        # uses are shown. Showing all of them at once read as a row of
+        # unlabelled date boxes.
         self._week_box = Select()
         self._week_box.currentIndexChanged.connect(self.generate)
-        toolbar.addWidget(self._week_box, 1)
 
-        self._from_date = QDateEdit()
-        self._from_date.setCalendarPopup(True)
-        self._from_date.setDisplayFormat("yyyy-MM-dd")
-        self._from_date.dateChanged.connect(self.generate)
-        toolbar.addWidget(QLabel("From"))
-        toolbar.addWidget(self._from_date)
-
-        self._to_date = QDateEdit()
-        self._to_date.setCalendarPopup(True)
-        self._to_date.setDisplayFormat("yyyy-MM-dd")
-        self._to_date.dateChanged.connect(self.generate)
-        toolbar.addWidget(QLabel("To"))
-        toolbar.addWidget(self._to_date)
-
+        self._day_label = QLabel("Date")
         self._day = QDateEdit()
         self._day.setCalendarPopup(True)
         self._day.setDisplayFormat("yyyy-MM-dd")
         self._day.dateChanged.connect(self.generate)
-        toolbar.addWidget(self._day)
+
+        self._from_label = QLabel("From")
+        self._from_date = QDateEdit()
+        self._from_date.setCalendarPopup(True)
+        self._from_date.setDisplayFormat("yyyy-MM-dd")
+        self._from_date.dateChanged.connect(self.generate)
+
+        self._to_label = QLabel("To")
+        self._to_date = QDateEdit()
+        self._to_date.setCalendarPopup(True)
+        self._to_date.setDisplayFormat("yyyy-MM-dd")
+        self._to_date.dateChanged.connect(self.generate)
 
         self._employee_box = Select()
         self._employee_box.setMinimumWidth(190)
         self._employee_box.currentIndexChanged.connect(self.generate)
+
+        toolbar.addWidget(self._week_box, 1)
+        toolbar.addWidget(self._day_label)
+        toolbar.addWidget(self._day)
+        toolbar.addWidget(self._from_label)
+        toolbar.addWidget(self._from_date)
+        toolbar.addWidget(self._to_label)
+        toolbar.addWidget(self._to_date)
         toolbar.addWidget(self._employee_box, 1)
         card.add_layout(toolbar)
 
@@ -128,7 +136,7 @@ class ReportsPage(QWidget):
         self._summary = QLabel("")
         self._summary.setWordWrap(True)
         self._summary.setStyleSheet(
-            f"background: {theme.SURFACE_ALT}; border-radius: 8px; padding: 10px;"
+            f"background: {theme.SURFACE_ALT}; padding: 10px;"
             f"color: {theme.TEXT}; font-size: 12px;"
         )
         card.add(self._summary)
@@ -231,10 +239,14 @@ class ReportsPage(QWidget):
     def _on_type_changed(self, index: int) -> None:
         kind = self._type_box.itemData(index)
         is_daily = kind == "daily"
+        is_range = kind == "range"
+        self._day_label.setVisible(is_daily)
         self._day.setVisible(is_daily)
         self._week_box.setVisible(kind == "weekly")
-        self._from_date.setVisible(kind == "range")
-        self._to_date.setVisible(kind == "range")
+        self._from_label.setVisible(is_range)
+        self._from_date.setVisible(is_range)
+        self._to_label.setVisible(is_range)
+        self._to_date.setVisible(is_range)
         self.generate()
 
     def refresh(self) -> None:
@@ -284,7 +296,7 @@ class ReportsPage(QWidget):
         self._employee_box.blockSignals(False)
 
         self._reload_templates()
-        self.generate()
+        self._on_type_changed(self._type_box.currentIndex())
 
     def _week_for_offset(self, offset: int):
         """Work week shifted by whole weeks (``0`` = this week)."""

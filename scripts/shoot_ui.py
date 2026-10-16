@@ -139,6 +139,9 @@ def main() -> int:
     context.bootstrap()
     seed(context)
     context.authentication.authenticate("admin", "Sup3rSecret!")
+    # Show the phone card as an administrator would first meet it: attendance
+    # enabled, service not yet started, so the firewall action is offered.
+    context.settings.set("phone_enabled", True, "admin")
 
     from app.main import build_pages
     from app.ui.attendance_kiosk import KioskWindow
@@ -171,14 +174,28 @@ def main() -> int:
         print("wrote", OUT / f"{name}.png")
 
     settings_page = pages["settings"]
-    index = next(
-        i for i in range(settings_page._tabs.count())
-        if settings_page._tabs.tabText(i) == "Appearance"
-    )
-    settings_page._tabs.setCurrentIndex(index)
-    settle()
-    settings_page.grab().save(str(OUT / "10-appearance.png"))
-    print("wrote", OUT / "10-appearance.png")
+
+    def grab_tab(tab_name: str, name: str) -> None:
+        """Photograph one Settings tab.
+
+        A tab that has never been shown has no laid-out geometry yet, so a
+        straight grab catches stale sizes and a scrollbar the tab does not
+        need. Rendering once first settles the layout.
+        """
+        index = next(
+            i
+            for i in range(settings_page._tabs.count())
+            if settings_page._tabs.tabText(i) == tab_name
+        )
+        settings_page._tabs.setCurrentIndex(index)
+        settle()
+        settings_page.grab()
+        settle()
+        settings_page.grab().save(str(OUT / f"{name}.png"))
+        print("wrote", OUT / f"{name}.png")
+
+    grab_tab("Appearance", "10-appearance")
+    grab_tab("Phone", "14-phone")
 
     # An accent that is not the default, to prove the palette follows through.
     theme.apply_accent(app, "Orange")

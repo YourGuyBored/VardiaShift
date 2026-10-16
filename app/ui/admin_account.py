@@ -176,7 +176,7 @@ class AdminAccountPage(QWidget):
 
         data = QLabel("")
         data.setWordWrap(True)
-        data.setObjectName("mono")
+        data.setProperty("role", "mono")
         data.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._data_label = data
         security.add(data)
