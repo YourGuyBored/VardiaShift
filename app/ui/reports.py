@@ -8,7 +8,6 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -33,7 +32,7 @@ from app.services.report_import import (
 from app.services.report_service import XLSX_AVAILABLE
 from app.ui import theme
 from app.ui.report_dialogs import ImportPreviewDialog, TemplateEditorDialog, pick_spreadsheet
-from app.ui.widgets import Card, EmptyState, PrimaryButton
+from app.ui.widgets import Card, EmptyState, PrimaryButton, Select
 
 TYPES = [
     ("Daily report", "daily"),
@@ -41,6 +40,29 @@ TYPES = [
     ("Monthly report", "monthly"),
     ("Custom range", "range"),
 ]
+
+#: Columns holding a short, fixed-shape value. They size to their content;
+#: every other column is free text and takes the slack instead. Giving all of
+#: them equal width cut names and statuses short on a wide report.
+SIZED_TO_CONTENT = frozenset(
+    {
+        "Employee ID",
+        "Time In",
+        "Time Out",
+        "Hours",
+        "Hours Worked",
+        "Weekly Goal",
+        "Remaining",
+        "Overtime",
+        "Days",
+        "Status",
+        "Source",
+        "Expected",
+        "Late By",
+        "Missing To Patch",
+        "Issue",
+    }
+)
 
 
 class ReportsPage(QWidget):
@@ -60,13 +82,13 @@ class ReportsPage(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
 
-        self._type_box = QComboBox()
+        self._type_box = Select()
         for label, key in TYPES:
             self._type_box.addItem(label, key)
         self._type_box.currentIndexChanged.connect(self._on_type_changed)
         toolbar.addWidget(self._type_box, 1)
 
-        self._week_box = QComboBox()
+        self._week_box = Select()
         self._week_box.currentIndexChanged.connect(self.generate)
         toolbar.addWidget(self._week_box, 1)
 
@@ -90,7 +112,7 @@ class ReportsPage(QWidget):
         self._day.dateChanged.connect(self.generate)
         toolbar.addWidget(self._day)
 
-        self._employee_box = QComboBox()
+        self._employee_box = Select()
         self._employee_box.setMinimumWidth(190)
         self._employee_box.currentIndexChanged.connect(self.generate)
         toolbar.addWidget(self._employee_box, 1)
@@ -113,6 +135,7 @@ class ReportsPage(QWidget):
 
         self._table = QTableWidget(0, 0)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(36)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
@@ -157,7 +180,7 @@ class ReportsPage(QWidget):
 
         self._template_bar = QHBoxLayout()
         self._template_bar.setSpacing(8)
-        self._template_box = QComboBox()
+        self._template_box = Select()
         self._template_box.setMinimumWidth(240)
         self._template_box.setToolTip(
             "Column layout used by CSV, XLSX and Google Sheets export."
@@ -308,6 +331,7 @@ class ReportsPage(QWidget):
         self._table.setColumnCount(len(report.headers))
         self._table.setHorizontalHeaderLabels(report.headers)
         self._table.setRowCount(len(report.rows) + (1 if report.totals else 0))
+        self._resize_columns(report.headers)
 
         for index, row in enumerate(report.rows):
             for column, value in enumerate(row):
@@ -335,6 +359,17 @@ class ReportsPage(QWidget):
         self._csv_button.setEnabled(not report.is_empty)
         self._xlsx_button.setEnabled(not report.is_empty and XLSX_AVAILABLE)
         self._refresh_sheets_button()
+
+    def _resize_columns(self, headers: list[str]) -> None:
+        """Size each column to what it holds; reports do not share a shape."""
+        header = self._table.horizontalHeader()
+        for index, name in enumerate(headers):
+            header.setSectionResizeMode(
+                index,
+                QHeaderView.ResizeMode.ResizeToContents
+                if name in SIZED_TO_CONTENT
+                else QHeaderView.ResizeMode.Stretch,
+            )
 
     # -- templates -----------------------------------------------------------
     def _reload_templates(self) -> None:

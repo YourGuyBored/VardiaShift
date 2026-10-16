@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import ipaddress
 import os
 import secrets
 import socket
@@ -51,29 +52,94 @@ THROTTLE_SECONDS = 60
 DEFAULT_PORT = 8123
 
 
-def lan_ip() -> str | None:
-    """Best-guess LAN address of this computer, without sending any traffic."""
+#: Carrier-grade NAT range. Tailscale hands out addresses here, and so does a
+#: mobile hotspot. It reaches this computer and nothing else on the Wi-Fi.
+CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _ipv4_candidates() -> list[str]:
+    """IPv4 addresses this computer answers on, in the order they were found."""
     candidates: list[str] = []
+
+    def add(address: str | None) -> None:
+        if address and address not in candidates:
+            candidates.append(address)
+
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             # No packets are sent; connect() only selects the route interface.
             probe.connect(("8.8.8.8", 80))
-            candidates.append(probe.getsockname()[0])
+            add(probe.getsockname()[0])
         finally:
             probe.close()
     except OSError:
         pass
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            address = info[4][0]
-            if not address.startswith("127."):
-                candidates.append(address)
+            add(info[4][0])
     except OSError:
         pass
-    for address in candidates:
-        if address and not address.startswith("127."):
-            return address
+    return candidates
+
+
+def _address_rank(address: str) -> int:
+    """Lower is better. A plain LAN address must beat a tunnel's address.
+
+    The route to the internet is not always the route to the phones: a VPN or
+    Tailscale tunnel can own the default route, and then the "obvious" source
+    address is one that only this computer can reach. Prefer a real private
+    LAN address, then carrier-grade NAT, then anything else public.
+    """
+    try:
+        ip = ipaddress.IPv4Address(address)
+    except ValueError:
+        return 3
+    if ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+        return 3
+    if ip in CGNAT_NETWORK:
+        return 2
+    return 0 if ip.is_private else 1
+
+
+def lan_addresses() -> list[str]:
+    """Usable addresses for a phone on the same network, best first."""
+    return sorted(
+        (address for address in _ipv4_candidates() if _address_rank(address) < 3),
+        key=_address_rank,
+    )
+
+
+def lan_ip() -> str | None:
+    """Best-guess LAN address of this computer, without sending any traffic.
+
+    Ranked rather than first-found, so a VPN that has taken over the default
+    route cannot make every phone link point at an address phones cannot
+    reach while the PC itself still opens it fine.
+    """
+    addresses = lan_addresses()
+    return addresses[0] if addresses else None
+
+
+def lan_warning() -> str | None:
+    """Why a phone on the same Wi-Fi could not reach this computer, if so.
+
+    ``None`` means every check passed. Used by Settings to say the problem out
+    loud instead of showing an address that quietly cannot work.
+    """
+    addresses = lan_addresses()
+    if not addresses:
+        return (
+            "No local network connection detected - phones will not be able "
+            "to reach this computer until it joins a network."
+        )
+    address = addresses[0]
+    if ipaddress.IPv4Address(address) in CGNAT_NETWORK:
+        return (
+            f"The only address found is {address}, which belongs to a VPN or "
+            "tunnel rather than the office network. Phones on the same Wi-Fi "
+            "cannot reach it; disconnect the VPN or join the phones' network."
+        )
     return None
 
 
@@ -272,14 +338,27 @@ def phone_url_for_phone(settings=None, port: int = 0) -> str:
 
     Raises :class:`PhoneAddressError` when this computer has no LAN address
     yet, because a QR built from the placeholder host scans fine and then
-    opens nothing - a confusing failure better caught while printing.
+    opens nothing - a confusing failure better caught while printing. The same
+    applies when the only address is a tunnel's: it opens on this computer and
+    nowhere else.
     """
     url = phone_base_url(settings, port)
-    if f"//{NO_LAN_ADDRESS}:" in url:
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host == NO_LAN_ADDRESS:
         raise PhoneAddressError(
             "This computer has no local network address yet, so a phone "
             "could not open the link. Connect it to the same Wi-Fi as the "
             "phones, then try again."
+        )
+    try:
+        tunnel_only = ipaddress.IPv4Address(host) in CGNAT_NETWORK
+    except ValueError:
+        tunnel_only = False
+    if tunnel_only:
+        raise PhoneAddressError(
+            f"This computer's network address ({host}) belongs to a VPN or "
+            "tunnel, which phones on the same Wi-Fi cannot reach. Join the "
+            "same network as the phones, then try again."
         )
     return url
 
@@ -519,10 +598,15 @@ def _make_handler(context, state: _CheckinState):
 
 
 __all__ = [
+    "CGNAT_NETWORK",
     "CHECKIN_PATH_PREFIX",
     "DEFAULT_PORT",
+    "PhoneAddressError",
     "PhoneServer",
     "_CheckinState",
+    "lan_addresses",
     "lan_ip",
+    "lan_warning",
     "phone_base_url",
+    "phone_url_for_phone",
 ]

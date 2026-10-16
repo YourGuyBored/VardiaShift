@@ -19,7 +19,12 @@ from app.ui.window_sizing import fit_to_screen
 
 
 class LoginWindow(QWidget):
-    """Shown on every launch once an administrator exists."""
+    """Shown on every launch once an administrator exists.
+
+    Layout is an ink header over a white card. The card is sized by its
+    content and never stretched: extra window height is left as quiet space
+    below it rather than inflating the panel.
+    """
 
     authenticated = Signal(str, str)  # username, password
 
@@ -31,55 +36,51 @@ class LoginWindow(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} - Sign in")
-        # Clamped to the screen so a short laptop window can still be moved.
-        fit_to_screen(self, (460, 600))
+        # Tall enough for the card at its natural height, so nothing inside it
+        # is squeezed on a normal screen. Clamped to the screen on small ones.
+        fit_to_screen(self, (460, 700))
         self._attempts = 0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        hero = QFrame()
-        hero.setObjectName("Hero")
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(34, 34, 34, 34)
-        hero_layout.setSpacing(4)
-
-        brand = QLabel(APP_NAME.upper())
-        brand.setStyleSheet("color: #FFFFFF; font-size: 26px; font-weight: 800; letter-spacing: 3px;")
-        hero_layout.addWidget(brand)
-
-        tagline = QLabel(APP_TAGLINE)
-        tagline.setStyleSheet("color: #93C5FD; font-size: 12px;")
-        hero_layout.addWidget(tagline)
-
-        org = QLabel(organization or "Sign in to continue")
-        org.setWordWrap(True)
-        org.setStyleSheet("color: #E0F2FE; font-size: 14px; font-weight: 600; margin-top: 16px;")
-        hero_layout.addWidget(org)
-        hero_layout.addSpacing(10)
-        root.addWidget(hero)
+        root.addWidget(self._build_header(organization))
 
         body = QFrame()
         body.setObjectName("Card")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(28, 26, 28, 26)
-        body_layout.setSpacing(12)
+        body_layout.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        body_layout.setSpacing(theme.SPACING_L)
 
         heading = QLabel("Administrator sign in")
-        heading.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {theme.TEXT};")
+        heading.setObjectName("CardTitle")
         body_layout.addWidget(heading)
+
+        subtitle = QLabel("Enter your administrator account to continue.")
+        subtitle.setObjectName("CardHint")
+        # Deliberately not word-wrapped: a wrapped QLabel re-measures itself
+        # against whatever width it is offered, which made the card grow when
+        # the window grew instead of leaving space below it.
+        body_layout.addWidget(subtitle)
+
+        body_layout.addSpacing(theme.SPACING_XS)
 
         self._username = QLineEdit()
         self._username.setPlaceholderText("Username")
-        self._username.setMinimumHeight(42)
-        body_layout.addWidget(self._caption("Username", self._username))
+        self._username.setMinimumHeight(44)
+        fields = QVBoxLayout()
+        fields.setSpacing(theme.SPACING_3XL)
+        fields.addWidget(self._field("Username", self._username))
 
         self._password = QLineEdit()
         self._password.setPlaceholderText("Password")
         self._password.setEchoMode(QLineEdit.EchoMode.Password)
-        self._password.setMinimumHeight(42)
-        body_layout.addWidget(self._caption("Password", self._password))
+        self._password.setMinimumHeight(44)
+        fields.addWidget(self._field("Password", self._password))
+        body_layout.addLayout(fields)
 
         self._error = QLabel("")
         self._error.setProperty("role", "error")
@@ -93,19 +94,26 @@ class LoginWindow(QWidget):
 
         self._hint = QLabel("")
         self._hint.setWordWrap(True)
-        self._hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self._hint.setProperty("role", "hint")
         body_layout.addWidget(self._hint)
-        body_layout.addStretch(1)
 
         if version:
+            rule = QFrame()
+            rule.setObjectName("SectionRule")
+            body_layout.addWidget(rule)
             footer = QLabel(f"{APP_NAME} {version}")
             footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            footer.setStyleSheet(f"color: {theme.TEXT_SOFT}; font-size: 11px;")
+            footer.setProperty("role", "mono")
             body_layout.addWidget(footer)
 
+        # No stretch on the card: a taller window must not inflate the panel,
+        # it must leave breathing room underneath it.
         outer = QVBoxLayout()
-        outer.setContentsMargins(30, 30, 30, 30)
-        outer.addWidget(body, 1)
+        outer.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        outer.addWidget(body)
+        outer.addStretch(1)
         holder = QWidget()
         holder.setLayout(outer)
         root.addWidget(holder, 1)
@@ -116,13 +124,45 @@ class LoginWindow(QWidget):
         self._password.textChanged.connect(self._clear_error)
         self._username.setFocus()
 
-    # -- helpers -------------------------------------------------------------
+    # -- construction helpers ------------------------------------------------
     @staticmethod
-    def _caption(label: str, widget: QWidget) -> QWidget:
+    def _build_header(organization: str) -> QWidget:
+        """Ink plate: what this is, and which workplace it is for."""
+        hero = QFrame()
+        hero.setObjectName("Hero")
+        layout = QVBoxLayout(hero)
+        layout.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        layout.setSpacing(theme.SPACING_XS)
+
+        brand = QLabel(APP_NAME.upper())
+        brand.setObjectName("HeroTitle")
+        layout.addWidget(brand)
+
+        tagline = QLabel(APP_TAGLINE)
+        tagline.setObjectName("HeroSub")
+        layout.addWidget(tagline)
+
+        # A clear step between "what this is" and "whose install this is".
+        layout.addSpacing(theme.SPACING_S)
+
+        org = QLabel(organization or "Sign in to continue")
+        org.setWordWrap(True)
+        org.setStyleSheet(
+            f"color: {theme.TEXT_ON_DARK}; font-size: 13px; font-weight: 600;"
+            f"margin-top: {theme.SPACING_S}px;"
+        )
+        layout.addWidget(org)
+        return hero
+
+    @staticmethod
+    def _field(label: str, widget: QWidget) -> QWidget:
+        """A caption stacked on its input, so both read as one control."""
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(theme.SPACING_XS)
         caption = QLabel(label)
         caption.setProperty("role", "field")
         layout.addWidget(caption)

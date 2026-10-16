@@ -28,6 +28,11 @@ def _closed(employee, context, day: str, in_at="08:00", out_at="17:00") -> None:
     context.attendance.time_out(employee, context.clock.parse(f"{day}T{out_at}:00"))
 
 
+def _closed_at(employee, context, time_in, time_out) -> None:
+    context.attendance.time_in(employee, time_in)
+    context.attendance.time_out(employee, time_out)
+
+
 # -- minutes_by_employee -----------------------------------------------------
 def test_minutes_by_employee_matches_the_single_employee_read(context, admin, crew):
     day = context.clock.today().strftime("%Y-%m-%d")
@@ -214,12 +219,12 @@ def test_minutes_by_day_omits_days_with_nothing_recorded(context, admin, crew):
 
 
 # -- the reports -------------------------------------------------------------
-def test_weekly_report_is_unchanged_by_the_bulk_read(context, admin, crew):
-    today = context.clock.today()
+def test_weekly_report_is_unchanged_by_the_bulk_read(context, admin, crew, frozen):
+    # Pinned inside the work week so the result does not depend on which day
+    # of the week the suite happens to run.
     for offset in (1, 2):
-        day = (today - timedelta(days=offset)).strftime("%Y-%m-%d")
         for employee in crew:
-            _closed(employee, context, day)
+            _closed_at(employee, context, frozen.at(8, 0, offset), frozen.at(17, 0, offset))
 
     report = context.reports.weekly_report(context.clock.week_bounds())
     hours = {row[0]: row[3] for row in report.rows}

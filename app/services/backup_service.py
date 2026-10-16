@@ -75,7 +75,11 @@ class BackupService:
         self.repos = repos
         self.settings = settings
         self.paths = paths
-        self.clock = settings.time_utils()
+
+    @property
+    def clock(self) -> TimeUtils:
+        """Read live so a time-zone change names new backups correctly."""
+        return self.settings.time_utils()
 
     # -- backup --------------------------------------------------------------
     def create_backup(self, admin_username: str = "system", label: str = "") -> Path:

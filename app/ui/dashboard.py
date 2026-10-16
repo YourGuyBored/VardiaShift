@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -26,6 +25,8 @@ from app.ui.widgets import (
     Card,
     EmptyState,
     PrimaryButton,
+    badge_cell,
+    Select,
     ProgressBarRow,
     StatTile,
     StatusBadge,
@@ -152,7 +153,7 @@ class DashboardPage(QWidget):
         self._search_box.textChanged.connect(self._on_search)
         toolbar.addWidget(self._search_box, 2)
 
-        self._filter_box = QComboBox()
+        self._filter_box = Select()
         self._filter_box.addItems(["All", "Working", "Timed Out", "Missing Time Out", "Not In"])
         self._filter_box.currentIndexChanged.connect(self._on_filter)
         toolbar.addWidget(self._filter_box, 1)
@@ -166,9 +167,19 @@ class DashboardPage(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
-        self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # Ten equal columns left the status pill too narrow to read, which
+        # sliced the label. Fixed columns for everything but the name, so the
+        # one field that varies in length gets the slack.
+        header.setSectionResizeMode(COLUMNS.index("Employee"), QHeaderView.ResizeMode.Stretch)
+        for column, name in enumerate(COLUMNS):
+            if name in ("Time In", "Time Out", "Today", "This Week", "Goal"):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            COLUMNS.index("Status"), QHeaderView.ResizeMode.Fixed
         )
+        self._table.setColumnWidth(COLUMNS.index("Status"), 132)
         self._table.setSortingEnabled(False)
         card.add(self._table, 1)
 
@@ -261,27 +272,28 @@ class DashboardPage(QWidget):
         clock = self.context.clock
         window = clock.week_bounds()
         days = clock.date_range(window.start, window.end)
-        values: list[float] = []
-        labels: list[str] = []
-        for day in days:
-            minutes = 0
-            for row in summary.rows:
-                if row.employee:
-                    minutes += self.context.repositories.attendance.minutes_for_employee(
-                        row.employee.employee_id,
-                        day.strftime("%Y-%m-%d"),
-                        day.strftime("%Y-%m-%d"),
-                        clock.to_iso(clock.now()),
-                    )
-            values.append(round(minutes / 60.0, 2))
-            labels.append(clock.day_name(day)[:3])
+        # One query for the whole week across the whole crew, rather than one
+        # per employee per day.
+        by_day = self.context.repositories.attendance.minutes_by_day(
+            window.start.strftime("%Y-%m-%d"),
+            window.end.strftime("%Y-%m-%d"),
+            clock.to_iso(clock.now()),
+        )
+        values = [
+            round(by_day.get(day.strftime("%Y-%m-%d"), 0) / 60.0, 2) for day in days
+        ]
+        labels = [clock.day_name(day)[:3] for day in days]
         self._chart.set_data(values, labels, 0.0)
         peak = max(values) if values else 0.0
         total = sum(values)
         self._chart_legend.setText(
             f"Total {clock.format_duration(int(total * 60))}  •  "
             f"Daily average {clock.format_duration(int((total / len(values) * 60)) if values and total else 0)}"
-            + (f"  •  Best day {peak:.2f}h" if peak else "")
+            + (
+                f"  •  Busiest day {clock.format_duration(int(peak * 60))}"
+                if peak
+                else ""
+            )
         )
 
     def _populate(self, summary) -> None:
@@ -316,12 +328,7 @@ class DashboardPage(QWidget):
             badge = StatusBadge(row.status)
             if row.status == ATTENDANCE_MISSING:
                 badge.setToolTip("No time-out was scanned for this session.")
-            holder = QWidget()
-            badge_layout = QHBoxLayout(holder)
-            badge_layout.setContentsMargins(4, 2, 4, 2)
-            badge_layout.addWidget(badge)
-            badge_layout.addStretch(1)
-            self._table.setCellWidget(index, 3, holder)
+            self._table.setCellWidget(index, 3, badge_cell(badge))
 
             source_text = (
                 self.context.attendance.source_label(row.source)

@@ -166,15 +166,20 @@ class TimeUtils:
         if not value:
             return None
         text = value.strip().replace(" ", "T")
+        # fromisoformat is the fast path and on 3.11+ also accepts the basic
+        # form ("20260302T080500"), so it is tried first. strptime stays as the
+        # fallback for the shapes fromisoformat still rejects, and also keeps
+        # this working if the parser is ever moved onto an older interpreter.
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            pass
         for pattern in (ISO_FORMAT, "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M"):
             try:
                 return datetime.strptime(text, pattern)
             except ValueError:
                 continue
-        try:
-            return datetime.fromisoformat(text)
-        except ValueError:
-            return None
+        return None
 
     @staticmethod
     def to_iso(value: datetime) -> str:

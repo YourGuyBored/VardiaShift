@@ -32,7 +32,7 @@ from app.constants import QR_TIME_IN, QR_TIME_OUT
 from app.models.attendance import AttendanceStatus
 from app.services.attendance_service import ClockError
 from app.ui import theme
-from app.ui.widgets import Card, PrimaryButton
+from app.ui.widgets import Card, PrimaryButton, Select
 from app.ui.window_sizing import (
     fit_to_screen,
     restore_window_geometry,
@@ -42,6 +42,48 @@ from app.ui.window_sizing import (
 STATE_IDLE = "idle"
 STATE_EMPLOYEE = "employee"
 STATE_RESULT = "result"
+
+#: The one big panel in the middle of the kiosk. Every state is the same
+#: block - a solid rule down the leading edge instead of a dashed border, the
+#: same padding and the same type size - so colour is the only thing that
+#: changes and the employee can read it from two metres away.
+_PROMPT_MINIMUM_HEIGHT = 96
+
+_PROMPT_STATES = {
+    "idle": "PRIMARY_SOFT",
+    "employee": "SUCCESS_SOFT",
+    "time_in": "SUCCESS_SOFT",
+    "time_out": "PRIMARY_SOFT",
+    "error": "DANGER_SOFT",
+}
+
+_PROMPT_INK = {
+    "idle": "PRIMARY_DARK",
+    "employee": "SUCCESS",
+    "time_in": "SUCCESS",
+    "time_out": "PRIMARY_DARK",
+    "error": "DANGER",
+}
+
+_PROMPT_RULE = {
+    "idle": "PRIMARY",
+    "employee": "SUCCESS",
+    "time_in": "SUCCESS",
+    "time_out": "PRIMARY",
+    "error": "DANGER",
+}
+
+
+def _prompt_style(state: str) -> str:
+    """The centre panel for one kiosk state, from the live tokens."""
+    fill = getattr(theme, _PROMPT_STATES.get(state, "PRIMARY_SOFT"))
+    ink = getattr(theme, _PROMPT_INK.get(state, "PRIMARY_DARK"))
+    rule = getattr(theme, _PROMPT_RULE.get(state, "PRIMARY"))
+    return (
+        f"background: {fill}; color: {ink};"
+        f"border: none; border-left: 6px solid {rule};"
+        f"padding: 24px 16px; font-size: 22px; font-weight: 700; letter-spacing: 1px;"
+    )
 
 
 class KioskWindow(QMainWindow):
@@ -94,19 +136,31 @@ class KioskWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("Hero")
         layout = QVBoxLayout(header)
-        layout.setContentsMargins(30, 24, 30, 24)
-        layout.setSpacing(2)
+        layout.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_L, theme.SPACING_XL, theme.SPACING_L
+        )
+        layout.setSpacing(theme.SPACING_2XS)
 
+        top = QHBoxLayout()
+        top.setSpacing(theme.SPACING_M)
+        # The workplace is what the employee recognises; the application is the
+        # small mark beside it.
         organization = QLabel(self.context.organization_name.upper())
-        organization.setObjectName("HeroSub")
-        layout.addWidget(organization)
+        organization.setObjectName("HeroValue")
+        organization.setWordWrap(True)
+        top.addWidget(organization, 1)
 
         title = QLabel(self.context.settings.settings.app_name)
-        title.setObjectName("HeroTitle")
-        layout.addWidget(title)
+        title.setObjectName("HeroSub")
+        layout_title = QVBoxLayout()
+        layout_title.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout_title.setSpacing(0)
+        layout_title.addWidget(title)
+        top.addLayout(layout_title, 0)
+        layout.addLayout(top)
 
         self._status = QLabel("Scan your employee QR code to begin")
-        self._status.setStyleSheet("color: #BFDBFE; font-size: 13px;")
+        self._status.setObjectName("HeroSub")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
         return header
@@ -116,11 +170,12 @@ class KioskWindow(QMainWindow):
         card = Card("", "")
         layout = card.body()
 
-        self._clock_label = QLabel("--:-- --")
+        self._clock_label = QLabel("00:00")
         self._clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._clock_label.setStyleSheet(
-            f"font-size: 52px; font-weight: 800; color: {theme.TEXT};"
-        )
+        self._clock_label.setProperty("role", "clock")
+        # A wrapped clock reads as a broken clock.
+        self._clock_label.setWordWrap(False)
+        self._clock_label.setMinimumHeight(52)
         layout.addWidget(self._clock_label)
 
         self._date_label = QLabel("")
@@ -128,15 +183,13 @@ class KioskWindow(QMainWindow):
         self._date_label.setObjectName("PageSubtitle")
         layout.addWidget(self._date_label)
 
-        layout.addSpacing(10)
+        layout.addSpacing(theme.SPACING_S)
 
-        self._prompt = QLabel("[ SCAN QR CODE ]")
+        self._prompt = QLabel("SCAN YOUR EMPLOYEE QR CODE")
         self._prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._prompt.setStyleSheet(
-            f"background: {theme.PRIMARY_SOFT}; color: {theme.PRIMARY_DARK};"
-            f"border: 2px dashed {theme.PRIMARY}; border-radius: 12px;"
-            f"padding: 26px 10px; font-size: 19px; font-weight: 800;"
-        )
+        self._prompt.setWordWrap(True)
+        self._prompt.setMinimumHeight(_PROMPT_MINIMUM_HEIGHT)
+        self._prompt.setStyleSheet(_prompt_style("idle"))
         layout.addWidget(self._prompt)
 
         hint = QLabel(
@@ -145,28 +198,36 @@ class KioskWindow(QMainWindow):
         )
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setWordWrap(True)
-        hint.setObjectName("CardHint")
+        hint.setProperty("role", "hint")
         layout.addWidget(hint)
 
         self._fallback_button = QPushButton("Having trouble? Enter ID manually")
         self._fallback_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._fallback_button.setProperty("variant", "ghost")
+        theme.variant(self._fallback_button, "ghost")
         self._fallback_button.clicked.connect(self._manual_pick)
         layout.addWidget(self._fallback_button)
 
         layout.addStretch(1)
 
         controls = QHBoxLayout()
+        controls.setSpacing(theme.SPACING_XS)
         self._camera_button = QPushButton("Start camera")
         self._camera_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._camera_button.clicked.connect(self._toggle_camera)
         controls.addWidget(self._camera_button)
-        controls.addStretch(1)
+
+        # A webcam is not reliably device 0, so the employee-facing screen lets
+        # the admin point it at the camera they actually plugged in.
+        self._camera_combo = Select()
+        self._camera_combo.setToolTip(
+            "Which webcam to open. Auto-detect tries every connected camera."
+        )
+        controls.addWidget(self._camera_combo, 1)
         layout.addLayout(controls)
 
         self._camera_hint = QLabel("")
         self._camera_hint.setWordWrap(True)
-        self._camera_hint.setObjectName("CardHint")
+        self._camera_hint.setProperty("role", "hint")
         layout.addWidget(self._camera_hint)
 
         return card
@@ -178,20 +239,20 @@ class KioskWindow(QMainWindow):
 
         self._result_title = QLabel("Ready")
         self._result_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.TEXT_MUTED};"
-        )
+        self._result_title.setObjectName("PageTitle")
+        self._result_title.setWordWrap(True)
         layout.addWidget(self._result_title)
 
         self._result_name = QLabel("")
         self._result_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_name.setWordWrap(True)
-        self._result_name.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {theme.TEXT};")
+        self._result_name.setObjectName("value")
         layout.addWidget(self._result_name)
 
         self._result_meta = QLabel("")
         self._result_meta.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._result_meta.setObjectName("CardHint")
+        self._result_meta.setWordWrap(True)
+        self._result_meta.setObjectName("mono")
         layout.addWidget(self._result_meta)
 
         divider = QFrame()
@@ -201,7 +262,7 @@ class KioskWindow(QMainWindow):
         self._result_details = QLabel("Waiting for a scan")
         self._result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_details.setWordWrap(True)
-        self._result_details.setStyleSheet(f"font-size: 13px; color: {theme.TEXT};")
+        self._result_details.setObjectName("CardHint")
         layout.addWidget(self._result_details)
 
         layout.addStretch(1)
@@ -215,15 +276,20 @@ class KioskWindow(QMainWindow):
         footer = QFrame()
         layout = QHBoxLayout(footer)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(theme.SPACING_S)
 
-        self._footer_hint = QLabel("A USB QR reader works straight away - just scan and press Enter.")
-        self._footer_hint.setObjectName("CardHint")
+        self._footer_hint = QLabel(
+            "A USB QR reader works straight away - just scan and press Enter."
+        )
+        self._footer_hint.setStyleSheet(
+            f"color: {theme.ACCENT_LIGHT}; font-size: 12px;"
+        )
         layout.addWidget(self._footer_hint)
         layout.addStretch(1)
 
         admin = QPushButton("Exit kiosk")
         admin.setCursor(Qt.CursorShape.PointingHandCursor)
-        admin.setProperty("variant", "ghost")
+        theme.variant(admin, "on-dark")
         admin.setToolTip("Requires the administrator password.")
         admin.clicked.connect(self._request_exit)
         layout.addWidget(admin)
@@ -231,9 +297,10 @@ class KioskWindow(QMainWindow):
 
     # -- scanner -------------------------------------------------------------
     def _install_scanner(self) -> None:
-        from app.qr.scanner import OPENCV_AVAILABLE, KeyboardWedgeFilter
+        from app.qr.scanner import OPENCV_AVAILABLE, KeyboardWedgeFilter, list_cameras
 
         self._wedge = KeyboardWedgeFilter(self.handle_scan)
+        self._camera_combo.addItem("Auto-detect", None)
 
         if not OPENCV_AVAILABLE:
             self._camera_button.setEnabled(False)
@@ -241,6 +308,7 @@ class KioskWindow(QMainWindow):
             self._camera_button.setToolTip(
                 "Install the optional 'opencv-python' package to enable webcam scanning."
             )
+            self._camera_combo.setEnabled(False)
             self._camera_hint.setText(
                 "Camera scanning is unavailable in this build. A USB QR reader works "
                 "normally, or use manual entry."
@@ -252,10 +320,31 @@ class KioskWindow(QMainWindow):
             self._camera = CameraScanner(self)
             self._camera.decoded.connect(self.handle_scan)
             self._camera.camera_error.connect(self._on_camera_error)
-            self._camera_hint.setText("Click 'Start camera' to scan with a webcam.")
+            self._populate_cameras(list_cameras())
+            self._camera_hint.setText("Start the camera to scan with a webcam.")
 
         manual_allowed = self.context.settings.settings.allow_manual_clock
         self._fallback_button.setVisible(manual_allowed)
+
+    def _populate_cameras(self, indices: list[int]) -> None:
+        """Offer every camera that answered, keeping the auto-detect entry."""
+        current = self._camera_combo.currentData()
+        self._camera_combo.clear()
+        self._camera_combo.addItem("Auto-detect", None)
+        for index in indices:
+            self._camera_combo.addItem(f"Camera {index}", index)
+        position = self._camera_combo.findData(current)
+        self._camera_combo.setCurrentIndex(position if position >= 0 else 0)
+        if not indices:
+            self._camera_hint.setText(
+                "No camera detected. Connect a USB webcam, then press Start camera - "
+                "a USB QR reader works without one."
+            )
+
+    def _selected_camera(self) -> int | None:
+        """The index the admin picked, or ``None`` for auto-detect."""
+        data = self._camera_combo.currentData()
+        return data if isinstance(data, int) else None
 
     def _toggle_camera(self) -> None:
         if self._camera is None:
@@ -265,7 +354,7 @@ class KioskWindow(QMainWindow):
             self._camera_button.setText("Start camera")
             self._camera_hint.setText("Camera stopped.")
         else:
-            ok, message = self._camera.start()
+            ok, message = self._camera.start(self._selected_camera())
             self._camera_button.setText("Stop camera" if ok else "Start camera")
             self._camera_hint.setText(message)
 
@@ -325,6 +414,15 @@ class KioskWindow(QMainWindow):
         self._clock_label.setText(clock.clock())
         self._date_label.setText(clock.format_long_date(clock.today()))
 
+    def _set_prompt(self, text: str, state: str) -> None:
+        """The one place the centre panel changes."""
+        self._prompt.setText(text)
+        self._prompt.setStyleSheet(_prompt_style(state))
+
+    def _set_result_title(self, text: str, color: str) -> None:
+        self._result_title.setText(text)
+        self._result_title.setStyleSheet(f"color: {color};")
+
     # -- flow ----------------------------------------------------------------
     def reset(self) -> None:
         self._employee = None
@@ -332,16 +430,8 @@ class KioskWindow(QMainWindow):
         self._reset_timer.stop()
 
         self._status.setText("Scan your employee QR code to begin")
-        self._prompt.setText("[ SCAN QR CODE ]")
-        self._prompt.setStyleSheet(
-            f"background: {theme.PRIMARY_SOFT}; color: {theme.PRIMARY_DARK};"
-            f"border: 2px dashed {theme.PRIMARY}; border-radius: 12px;"
-            f"padding: 26px 10px; font-size: 19px; font-weight: 800;"
-        )
-        self._result_title.setText("Ready")
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.TEXT_MUTED};"
-        )
+        self._set_prompt("SCAN YOUR EMPLOYEE QR CODE", "idle")
+        self._set_result_title("Ready", theme.TEXT_MUTED)
         self._result_name.setText("")
         self._result_meta.setText("")
         self._result_details.setText("Waiting for a scan")
@@ -402,17 +492,11 @@ class KioskWindow(QMainWindow):
         employee = self._employee
         clock = self.context.clock
         self._state = STATE_EMPLOYEE
-        self._status.setText(f"Hello, {employee.full_name}! Now scan the TIME IN or TIME OUT code.")
-        self._prompt.setText("[ SCAN TIME IN / TIME OUT ]")
-        self._prompt.setStyleSheet(
-            f"background: {theme.SUCCESS_SOFT}; color: #15803D;"
-            f"border: 2px dashed {theme.SUCCESS}; border-radius: 12px;"
-            f"padding: 26px 10px; font-size: 17px; font-weight: 800;"
+        self._status.setText(
+            f"Hello, {employee.full_name}! Now scan the TIME IN or TIME OUT code."
         )
-        self._result_title.setText("Employee confirmed")
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.SUCCESS};"
-        )
+        self._set_prompt("SCAN TIME IN / TIME OUT", "employee")
+        self._set_result_title("Employee confirmed", theme.SUCCESS)
         self._result_name.setText(employee.full_name)
         self._result_meta.setText(
             f"{employee.employee_code}"
@@ -474,15 +558,8 @@ class KioskWindow(QMainWindow):
     def _show_time_in_success(self, result) -> None:
         clock = self.context.clock
         self._status.setText("Time in recorded")
-        self._prompt.setText("TIME IN SUCCESSFUL")
-        self._prompt.setStyleSheet(
-            f"background: {theme.SUCCESS_SOFT}; color: #15803D; border: 2px solid {theme.SUCCESS};"
-            f"border-radius: 12px; padding: 26px 10px; font-size: 21px; font-weight: 800;"
-        )
-        self._result_title.setText("TIME IN SUCCESSFUL")
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.SUCCESS};"
-        )
+        self._set_prompt("TIME IN SUCCESSFUL", "time_in")
+        self._set_result_title("TIME IN SUCCESSFUL", theme.SUCCESS)
         self._result_name.setText(result.full_name)
         self._result_meta.setText(
             f"{result.employee_code}"
@@ -497,16 +574,8 @@ class KioskWindow(QMainWindow):
     def _show_time_out_success(self, result) -> None:
         clock = self.context.clock
         self._status.setText("Time out recorded")
-        self._prompt.setText("TIME OUT SUCCESSFUL")
-        self._prompt.setStyleSheet(
-            f"background: {theme.PRIMARY_SOFT}; color: {theme.PRIMARY_DARK};"
-            f"border: 2px solid {theme.PRIMARY}; border-radius: 12px;"
-            f"padding: 26px 10px; font-size: 21px; font-weight: 800;"
-        )
-        self._result_title.setText("TIME OUT SUCCESSFUL")
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.PRIMARY};"
-        )
+        self._set_prompt("TIME OUT SUCCESSFUL", "time_out")
+        self._set_result_title("TIME OUT SUCCESSFUL", theme.PRIMARY)
         self._result_name.setText(result.full_name)
         self._result_meta.setText(
             f"{result.employee_code}"
@@ -542,15 +611,8 @@ class KioskWindow(QMainWindow):
     def _show_error(self, title: str, message: str) -> None:
         self._state = STATE_RESULT
         self._status.setText(title)
-        self._prompt.setText(title.upper())
-        self._prompt.setStyleSheet(
-            f"background: {theme.DANGER_SOFT}; color: #B91C1C; border: 2px solid {theme.DANGER};"
-            f"border-radius: 12px; padding: 26px 10px; font-size: 17px; font-weight: 800;"
-        )
-        self._result_title.setText(title)
-        self._result_title.setStyleSheet(
-            f"font-size: 22px; font-weight: 800; color: {theme.DANGER};"
-        )
+        self._set_prompt(title.upper(), "error")
+        self._set_result_title(title, theme.DANGER)
         self._result_name.setText(self._employee.full_name if self._employee else "")
         self._result_meta.setText("")
         self._result_details.setText(message)

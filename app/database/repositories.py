@@ -517,6 +517,121 @@ class AttendanceRepository:
             )
         )
 
+    # -- bulk reads ----------------------------------------------------------
+    # These replace a per-employee query loop. Each one has to agree exactly
+    # with the single-employee method it replaces, or a report would quietly
+    # show different numbers from the same data.
+
+    def minutes_by_employee(
+        self,
+        start_date: str,
+        end_date: str,
+        now_iso: str | None = None,
+        employee_id: int | None = None,
+    ) -> dict[int, int]:
+        """Minutes worked per employee, keyed on ``employee_id``.
+
+        Employees with no records in the period are absent from the result, and
+        an open session accrues up to ``now_iso`` exactly as
+        :meth:`minutes_for_employee` does.
+        """
+        clause = " AND employee_id = ?" if employee_id is not None else ""
+        params: tuple[Any, ...] = (start_date, end_date)
+        if employee_id is not None:
+            params += (employee_id,)
+
+        closed_rows = self.db.query(
+            "SELECT employee_id, COALESCE(SUM(duration_minutes), 0) AS minutes "
+            "FROM attendance WHERE work_date BETWEEN ? AND ?"
+            f"{clause} AND time_out IS NOT NULL GROUP BY employee_id",
+            params,
+        )
+        totals = {int(row["employee_id"]): int(row["minutes"]) for row in closed_rows}
+
+        open_rows = self.db.query(
+            "SELECT employee_id, time_in FROM attendance "
+            "WHERE work_date BETWEEN ? AND ?"
+            f"{clause} AND time_out IS NULL AND time_in IS NOT NULL",
+            params,
+        )
+        if open_rows:
+            from app.utils.time_utils import TimeUtils
+
+            end_dt = TimeUtils.parse(now_iso) if now_iso else TimeUtils().now()
+            for row in open_rows:
+                elapsed = TimeUtils.elapsed_minutes(TimeUtils.parse(row["time_in"]), end_dt)
+                key = int(row["employee_id"])
+                totals[key] = totals.get(key, 0) + elapsed
+        return totals
+
+    def minutes_by_day(
+        self, start_date: str, end_date: str, now_iso: str | None = None
+    ) -> dict[str, int]:
+        """Minutes worked per day across everyone, keyed on ``YYYY-MM-DD``.
+
+        Days with nothing recorded are absent, matching a sum over
+        :meth:`minutes_for_employee` that skips them.
+        """
+        closed_rows = self.db.query(
+            "SELECT work_date, COALESCE(SUM(duration_minutes), 0) AS minutes "
+            "FROM attendance WHERE work_date BETWEEN ? AND ? AND time_out IS NOT NULL "
+            "GROUP BY work_date",
+            (start_date, end_date),
+        )
+        totals = {str(row["work_date"]): int(row["minutes"]) for row in closed_rows}
+
+        open_rows = self.db.query(
+            "SELECT work_date, time_in FROM attendance "
+            "WHERE work_date BETWEEN ? AND ? AND time_out IS NULL AND time_in IS NOT NULL",
+            (start_date, end_date),
+        )
+        if open_rows:
+            from app.utils.time_utils import TimeUtils
+
+            end_dt = TimeUtils.parse(now_iso) if now_iso else TimeUtils().now()
+            for row in open_rows:
+                elapsed = TimeUtils.elapsed_minutes(TimeUtils.parse(row["time_in"]), end_dt)
+                key = str(row["work_date"])
+                totals[key] = totals.get(key, 0) + elapsed
+        return totals
+
+    def daily_totals_by_employee(
+        self, start_date: str, end_date: str
+    ) -> dict[int, dict[str, dict]]:
+        """``{employee_id: {work_date: totals}}`` in two queries, not N.
+
+        The inner dicts carry the same keys :meth:`daily_totals` returns, so
+        the two are directly comparable.
+        """
+        rows = self.db.query(
+            "SELECT employee_id, work_date, "
+            "COALESCE(SUM(duration_minutes), 0) AS minutes, "
+            "COUNT(*) AS sessions, "
+            "MIN(time_in) AS first_in, MAX(time_out) AS last_out, "
+            "SUM(CASE WHEN time_out IS NULL THEN 1 ELSE 0 END) AS open_sessions "
+            "FROM attendance WHERE work_date BETWEEN ? AND ? "
+            "GROUP BY employee_id, work_date",
+            (start_date, end_date),
+        )
+        grouped: dict[int, dict[str, dict]] = {}
+        for row in rows:
+            entry = {key: row[key] for key in row.keys() if key != "employee_id"}
+            grouped.setdefault(int(row["employee_id"]), {})[str(row["work_date"])] = entry
+        return grouped
+
+    def records_for_date(self, work_date: str) -> dict[int, AttendanceRecord]:
+        """One day's records keyed on ``employee_id``.
+
+        Empty when nobody clocked in, which is what makes it a usable stand-in
+        for looping :meth:`get_for_date` over the roster.
+        """
+        rows = self.db.query(
+            f"{self.SELECT} WHERE a.work_date = ?", (work_date,)
+        )
+        return {
+            int(row["employee_id"]): AttendanceRecord.from_row(row) for row in rows
+        }
+
     def totals_for_date(self, work_date: str) -> dict[str, int]:
         row = self.db.query_one(
             "SELECT "

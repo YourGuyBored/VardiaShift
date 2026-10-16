@@ -16,7 +16,6 @@ lets the attendance service decide what it means.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
@@ -42,6 +41,12 @@ except ImportError:  # pragma: no cover
 
 MAX_PAYLOAD_CHARS = 256
 INTERVAL_MS = 120
+
+#: A USB webcam is rarely guaranteed to be device 0. A built-in camera, a
+#: previously unplugged device or a busy handle all shift the numbering, so
+#: the scanner probes this many indices before giving up.
+MAX_CAMERA_INDEX = 6
+PROBE_TIMEOUT_MS = 400
 
 
 @dataclass
@@ -73,6 +78,54 @@ def capability(manual_allowed: bool = True) -> ScanCapability:
     )
 
 
+def _open_capture(index: int):
+    """Open one capture handle and hand it back only if it really opened.
+
+    OpenCV reports success for an index that has no device behind it on some
+    backends, so a frame read is the only honest test.
+    """
+    if not OPENCV_AVAILABLE:
+        return None
+    try:
+        capture = cv2.VideoCapture(index)
+    except Exception:  # pragma: no cover - depends on the OpenCV build
+        return None
+    try:
+        if not capture.isOpened():
+            capture.release()
+            return None
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        return capture
+    except Exception:  # pragma: no cover - defensive
+        try:
+            capture.release()
+        except Exception:
+            pass
+        return None
+
+
+def list_cameras(max_index: int = MAX_CAMERA_INDEX) -> list[int]:
+    """Every video index that currently answers.
+
+    Used to fill the kiosk's camera picker, so the admin can choose the webcam
+    instead of hoping the app guessed it.
+    """
+    found: list[int] = []
+    for index in range(max(0, int(max_index))):
+        capture = _open_capture(index)
+        if capture is None:
+            continue
+        try:
+            found.append(index)
+        finally:
+            try:
+                capture.release()
+            except Exception:  # pragma: no cover
+                pass
+    return found
+
+
 class CameraScanner(QObject):
     """Background webcam reader that pushes decoded payloads to a signal."""
 
@@ -87,6 +140,7 @@ class CameraScanner(QObject):
         super().__init__(parent)
         self._capture = None
         self._detector = None
+        self._camera_index: int | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(INTERVAL_MS)
         self._timer.timeout.connect(self._grab)
@@ -97,23 +151,63 @@ class CameraScanner(QObject):
     def available(self) -> bool:
         return OPENCV_AVAILABLE
 
-    def start(self, camera_index: int = 0) -> tuple[bool, str]:
+    @property
+    def camera_index(self) -> int | None:
+        """The index actually in use, or ``None`` when no camera is running."""
+        return self._camera_index
+
+    def start(
+        self,
+        camera_index: int | None = None,
+        max_index: int = MAX_CAMERA_INDEX,
+    ) -> tuple[bool, str]:
+        """Open a camera, probing several indices unless one is named.
+
+        ``camera_index=None`` means auto-detect: try every index up to
+        ``max_index`` and take the first that opens. A named index is honoured
+        exactly, because being unable to start the camera the admin picked has
+        to be visible rather than silently "helpfully" substituted.
+        """
         if not OPENCV_AVAILABLE:
             return False, "Webcam scanning needs the optional 'opencv-python' package."
-        try:
-            capture = cv2.VideoCapture(camera_index)
-            if not capture.isOpened():
-                return False, "No camera found. Connect a webcam and try again."
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            self._capture = capture
-            self._detector = cv2.QRCodeDetector()
-            self._failures = 0
-            self._error_reported = False
-            self._timer.start()
-            return True, "Camera started."
-        except Exception as exc:  # pragma: no cover - hardware dependent
-            return False, f"Could not start the camera: {exc}"
+
+        if camera_index is None:
+            candidates = range(max(0, int(max_index)))
+        else:
+            candidates = [int(camera_index)]
+
+        tried = 0
+        for index in candidates:
+            tried += 1
+            capture = _open_capture(index)
+            if capture is None:
+                continue
+            try:
+                self._capture = capture
+                self._detector = cv2.QRCodeDetector()
+                self._camera_index = index
+                self._failures = 0
+                self._error_reported = False
+                self._timer.start()
+                return True, f"Camera {index} started."
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                try:
+                    capture.release()
+                except Exception:
+                    pass
+                self._capture = None
+                return False, f"Could not start the camera: {exc}"
+
+        if camera_index is None:
+            return False, (
+                "No camera found. Tried video devices "
+                f"0 to {max(0, int(max_index)) - 1}. Connect a webcam, or pick "
+                "one from the camera list."
+            )
+        return False, (
+            f"Camera {camera_index} could not be opened. Pick another from the "
+            "camera list, or reconnect the device."
+        )
 
     def stop(self) -> None:
         self._timer.stop()
@@ -123,6 +217,7 @@ class CameraScanner(QObject):
             except Exception:  # pragma: no cover
                 pass
         self._capture = None
+        self._camera_index = None
         self._failures = 0
 
     @property
@@ -440,5 +535,5 @@ __all__ = [
     "ScanCapability",
     "ScannerWidget",
     "capability",
-    "sys",
+    "list_cameras",
 ]

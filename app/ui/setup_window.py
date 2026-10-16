@@ -5,11 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -18,12 +19,19 @@ from PySide6.QtWidgets import (
 from app.constants import APP_NAME, APP_TAGLINE
 from app.services import presets
 from app.ui import theme
-from app.ui.widgets import PrimaryButton
+from app.ui.widgets import PrimaryButton, Select
 from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password, validate_username
 
 STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"]
-STRENGTH_COLORS = [theme.DANGER, theme.DANGER, theme.WARNING, theme.PRIMARY, theme.SUCCESS]
+
+#: Red, red, amber, accent, green - the only place colour is graded rather
+#: than chosen, and resolved on demand so it follows the accent.
+_STRENGTH_HEX = ("DANGER", "DANGER", "WARNING", "PRIMARY", "SUCCESS")
+
+
+def _strength_colors() -> list[str]:
+    return [getattr(theme, name) for name in _STRENGTH_HEX]
 
 
 class SetupWindow(QWidget):
@@ -39,8 +47,9 @@ class SetupWindow(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} - First-time setup")
-        # Clamped to the screen so a short laptop window can still be moved.
-        fit_to_screen(self, (560, 660))
+        # The form scrolls rather than being squeezed, so this only has to be
+        # tall enough to look deliberate; clamped to the screen on small ones.
+        fit_to_screen(self, (620, 660))
         self._username = QLineEdit()
         self._full_name = QLineEdit()
         self._password = QLineEdit()
@@ -64,11 +73,13 @@ class SetupWindow(QWidget):
         body = QFrame()
         body.setObjectName("Card")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(28, 26, 28, 26)
-        body_layout.setSpacing(14)
+        body_layout.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        body_layout.setSpacing(theme.SPACING_M)
 
         heading = QLabel("Create Administrator Account")
-        heading.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {theme.TEXT};")
+        heading.setObjectName("PageTitle")
         body_layout.addWidget(heading)
 
         note = QLabel(
@@ -76,27 +87,47 @@ class SetupWindow(QWidget):
             "You will need it every time you open the application."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
+        note.setObjectName("CardHint")
         body_layout.addWidget(note)
 
-        body_layout.addLayout(self._field("Full name (optional)", self._full_name,
-                                          "e.g. Ana Rivera"))
-        body_layout.addLayout(self._field("Username", self._username,
-                                          "Letters, numbers, dots, dashes (min 3)"))
-        body_layout.addLayout(self._field("Password", self._password,
-                                          "At least 8 characters"))
+        # A 2x2 grid of fields. Stacked full width the form needed about 900px,
+        # more than a laptop screen, and the squeezed layout drew captions on
+        # top of their own inputs.
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(theme.SPACING_XL)
+        grid.setVerticalSpacing(theme.SPACING_S)
+        grid.addLayout(
+            self._field("Full name (optional)", self._full_name,
+                        "e.g. Ana Rivera"), 0, 0,
+        )
+        grid.addLayout(
+            self._field("Username", self._username,
+                        "Letters, numbers, dots, dashes (min 3)"), 0, 1,
+        )
+        grid.addLayout(
+            self._field("Password", self._password, "At least 8 characters"), 1, 0,
+        )
+        grid.addLayout(
+            self._field("Confirm password", self._confirm,
+                        "Type the password again"), 1, 1,
+        )
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        body_layout.addLayout(grid)
+
         self._strength_row = QHBoxLayout()
+        self._strength_row.setContentsMargins(0, 0, 0, 0)
+        self._strength_row.setSpacing(theme.SPACING_XS)
         self._strength_bar = _StrengthBar()
         self._strength_row.addWidget(self._strength_bar, 1)
         self._strength_row.addWidget(self._strength)
-        self._strength_row.setContentsMargins(0, 0, 0, 0)
         body_layout.addLayout(self._strength_row)
-        body_layout.addLayout(self._field("Confirm password", self._confirm,
-                                          "Type the password again"))
 
-        body_layout.addSpacing(8)
-        body_layout.addWidget(self._organisation_type())
-        body_layout.addWidget(self._clock_in_mode())
+        presets = QHBoxLayout()
+        presets.setSpacing(theme.SPACING_XL)
+        presets.addWidget(self._organisation_type(), 1)
+        presets.addWidget(self._clock_in_mode(), 1)
+        body_layout.addLayout(presets)
 
         body_layout.addWidget(self._error)
 
@@ -108,16 +139,24 @@ class SetupWindow(QWidget):
             "Your password is stored only as a salted PBKDF2 hash - never in plain text."
         )
         confirm_label.setWordWrap(True)
-        confirm_label.setStyleSheet(f"color: {theme.TEXT_SOFT}; font-size: 11px;")
+        confirm_label.setObjectName("CardHint")
         body_layout.addWidget(confirm_label)
-        body_layout.addStretch(1)
 
+        # Scrollable so the form stays usable on a short screen instead of
+        # being squeezed into overlapping labels.
+        scroller = QScrollArea()
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         outer = QVBoxLayout()
-        outer.setContentsMargins(34, 34, 34, 34)
-        outer.addWidget(body, 1)
+        outer.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        outer.addWidget(body)
         holder = QWidget()
         holder.setLayout(outer)
-        root.addWidget(holder, 1)
+        scroller.setWidget(holder)
+        root.addWidget(scroller, 1)
 
         self._password.textChanged.connect(self._update_strength)
         for field in (self._username, self._full_name, self._password, self._confirm):
@@ -128,48 +167,61 @@ class SetupWindow(QWidget):
 
     # -- construction helpers ------------------------------------------------
     def _build_hero(self, data_directory: str, version: str) -> QWidget:
+        """Compact ink plate: what is being set up, and where it will live."""
         hero = QFrame()
         hero.setObjectName("Hero")
         layout = QVBoxLayout(hero)
-        layout.setContentsMargins(34, 30, 34, 30)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL
+        )
+        layout.setSpacing(theme.SPACING_XS)
+
+        top = QHBoxLayout()
+        top.setSpacing(theme.SPACING_S)
 
         brand = QLabel(APP_NAME.upper())
-        brand.setStyleSheet("color: #FFFFFF; font-size: 24px; font-weight: 800; letter-spacing: 3px;")
-        layout.addWidget(brand)
+        brand.setObjectName("HeroTitle")
+        top.addWidget(brand)
+        top.addStretch(1)
+
+        step = QLabel("FIRST-TIME SETUP")
+        step.setObjectName("HeroLabel")
+        top.addWidget(step)
+        layout.addLayout(top)
 
         tagline = QLabel(APP_TAGLINE)
-        tagline.setStyleSheet("color: #93C5FD; font-size: 12px;")
+        tagline.setObjectName("HeroSub")
         layout.addWidget(tagline)
 
-        first = QLabel("FIRST-TIME SETUP")
-        first.setStyleSheet(
-            "color: #FFFFFF; font-size: 15px; font-weight: 700; margin-top: 18px;"
-        )
-        layout.addWidget(first)
+        layout.addSpacing(theme.SPACING_XS)
 
         detail = QLabel(
             "A new attendance database was created automatically. "
             "Create your administrator account to continue."
         )
         detail.setWordWrap(True)
-        detail.setStyleSheet("color: #BFDBFE; font-size: 12px;")
+        detail.setStyleSheet(
+            f"color: {theme.TEXT_ON_DARK}; font-size: 12px;"
+        )
         layout.addWidget(detail)
 
         if data_directory:
             path_label = QLabel(f"Data folder: {data_directory}")
             path_label.setWordWrap(True)
-            path_label.setObjectName("mono")
-            path_label.setStyleSheet("color: #7DD3FC; font-size: 10px; margin-top: 10px;")
+            path_label.setStyleSheet(
+                f"color: {theme.ACCENT_LIGHT}; font-family: {theme.FONT_MONO};"
+                f"font-size: 10px; margin-top: {theme.SPACING_XS}px;"
+            )
             layout.addWidget(path_label)
 
         if version:
-            layout.addSpacing(6)
+            layout.addSpacing(theme.SPACING_XS)
             version_label = QLabel(f"Version {version}")
-            version_label.setStyleSheet("color: #64748B; font-size: 10px;")
+            version_label.setStyleSheet(
+                f"color: {theme.ACCENT_LIGHT}; font-family: {theme.FONT_MONO};"
+                f"font-size: 10px;"
+            )
             layout.addWidget(version_label)
-
-        layout.addSpacing(6)
         return hero
 
     def _organisation_type(self) -> QWidget:
@@ -182,7 +234,7 @@ class SetupWindow(QWidget):
         caption.setProperty("role", "field")
         layout.addWidget(caption)
 
-        self._type_box = QComboBox()
+        self._type_box = Select()
         for label, key in presets.TYPES:
             self._type_box.addItem(label, key)
         self._type_box.setToolTip(
@@ -203,7 +255,7 @@ class SetupWindow(QWidget):
         caption.setProperty("role", "field")
         layout.addWidget(caption)
 
-        self._mode_box = QComboBox()
+        self._mode_box = Select()
         self._mode_box.addItem("Quick - one scan is enough", presets.MODE_QUICK)
         self._mode_box.addItem(
             "Strict - own QR, then the TIME IN/OUT QR", presets.MODE_STRICT
@@ -227,21 +279,24 @@ class SetupWindow(QWidget):
     @staticmethod
     def _field(label: str, widget: QWidget, placeholder: str = "") -> QHBoxLayout:
         row = QVBoxLayout()
-        row.setSpacing(5)
+        row.setSpacing(theme.SPACING_XS)
         caption = QLabel(label)
         caption.setProperty("role", "field")
         row.addWidget(caption)
         if placeholder and isinstance(widget, QLineEdit):
             widget.setPlaceholderText(placeholder)
-        widget.setMinimumHeight(40)
+        widget.setMinimumHeight(44)
         row.addWidget(widget)
         return row
 
     # -- interaction ---------------------------------------------------------
     def _update_strength(self, text: str) -> None:
         score = password_strength(text)
+        colors = _strength_colors()
         self._strength.setText(STRENGTH_LABELS[score] if text else "")
-        self._strength.setStyleSheet(f"color: {STRENGTH_COLORS[score]}; font-size: 11px; font-weight: 700;")
+        self._strength.setStyleSheet(
+            f"color: {colors[score]}; font-size: 11px; font-weight: 700;"
+        )
         self._strength_bar.set_score(score)
 
     def _clear_error(self) -> None:
@@ -298,9 +353,10 @@ class _StrengthBar(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(Qt.PenStyle.NoPen))
+        colors = _strength_colors()
         segment_width = self.width() / 4
         for index in range(4):
-            color = STRENGTH_COLORS[self._score] if index < self._score else theme.BORDER
+            color = colors[self._score] if index < self._score else theme.SURFACE_SUNK
             rect = QRectF(
                 index * segment_width + 2,
                 0.0,
@@ -308,5 +364,5 @@ class _StrengthBar(QWidget):
                 float(self.height()),
             )
             painter.setBrush(QBrush(QColor(color)))
-            painter.drawRoundedRect(rect, 3, 3)
+            painter.drawRect(rect)
         painter.end()

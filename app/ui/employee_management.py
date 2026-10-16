@@ -7,7 +7,6 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -39,6 +38,8 @@ from app.ui.widgets import (
     Card,
     EmptyState,
     PrimaryButton,
+    Select,
+    badge_cell,
     clear_table_widgets,
 )
 from app.utils.validation import ValidationError, validate_employee_payload
@@ -66,7 +67,7 @@ class EmployeeDialog(QDialog):
         self._department = QLineEdit()
         self._position = QLineEdit()
         self._badge = QLineEdit()
-        self._goal = QComboBox()
+        self._goal = Select()
         self._goal.setEditable(True)
 
         settings = context.settings.settings
@@ -276,17 +277,26 @@ class EmployeePage(QWidget):
         self._search_box.textChanged.connect(self._on_search)
         toolbar.addWidget(self._search_box, 2)
 
-        self._status_box = QComboBox()
+        self._status_box = Select()
         self._status_box.addItem("All employees", "")
         self._status_box.addItem("Active only", "active")
         self._status_box.addItem("Inactive only", "inactive")
         self._status_box.currentIndexChanged.connect(self._on_status)
         toolbar.addWidget(self._status_box, 1)
 
-        self._department_box = QComboBox()
+        self._department_box = Select()
         self._department_box.currentIndexChanged.connect(self._refresh_table)
         toolbar.addWidget(self._department_box, 1)
         card.add_layout(toolbar)
+
+        # The row actions get their own line: sharing the filter row squeezed
+        # the search box down to "Sea...".
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(theme.SPACING_XS)
+        actions_row.addStretch(1)
+        for button in self._toolbar_actions():
+            actions_row.addWidget(button)
+        card.add_layout(actions_row)
 
         self._table = QTableWidget(0, len(COLUMNS))
         self._table.setHorizontalHeaderLabels(COLUMNS)
@@ -296,11 +306,23 @@ class EmployeePage(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
-        self._table.setColumnWidth(0, 110)
+        # Only the name takes the slack. Equal columns squeezed dates, goals and
+        # status until every one of them was cut off mid-word.
         header = self._table.horizontalHeader()
-        for column in range(len(COLUMNS)):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(
+            COLUMNS.index("Full Name"), QHeaderView.ResizeMode.Stretch
+        )
+        header.setSectionResizeMode(
+            COLUMNS.index("Position"), QHeaderView.ResizeMode.Stretch
+        )
+        for column, name in enumerate(COLUMNS):
+            if name in ("Employee ID", "Custom Code", "Status", "Weekly Goal", "Date Added"):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            COLUMNS.index("Status"), QHeaderView.ResizeMode.Fixed
+        )
+        self._table.setColumnWidth(COLUMNS.index("Status"), 96)
+        header.setStretchLastSection(False)
         self._table.itemDoubleClicked.connect(lambda _: self._edit())
         card.add(self._table, 1)
 
@@ -316,7 +338,13 @@ class EmployeePage(QWidget):
 
     # -- header --------------------------------------------------------------
     def _header(self) -> QHBoxLayout:
+        """Title, counts, and the one action that creates something.
+
+        The secondary actions live in the toolbar with the filters: seven
+        buttons in one row squeezed the summary line off the screen.
+        """
         row = QHBoxLayout()
+        row.setSpacing(theme.SPACING_S)
         column = QVBoxLayout()
         column.setSpacing(2)
         title = QLabel("Employees")
@@ -328,43 +356,42 @@ class EmployeePage(QWidget):
         row.addLayout(column)
         row.addStretch(1)
 
-        add = PrimaryButton("+  Add Employee", self._add)
+        add = PrimaryButton("Add Employee", self._add)
         row.addWidget(add)
+        return row
 
+    def _toolbar_actions(self) -> list[QPushButton]:
+        """Secondary actions, grouped with the filters rather than the title."""
         edit = QPushButton("Edit")
         edit.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit.setToolTip("Edit the selected employee")
         edit.clicked.connect(self._edit)
-        row.addWidget(edit)
 
         view = QPushButton("View Attendance")
         view.setCursor(Qt.CursorShape.PointingHandCursor)
+        view.setToolTip("Open this employee's attendance history")
         view.clicked.connect(self._view_attendance)
-        row.addWidget(view)
 
         self._toggle_button = QPushButton("Deactivate")
         self._toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_button.clicked.connect(self._toggle_status)
-        row.addWidget(self._toggle_button)
 
         regen = QPushButton("New QR")
         regen.setCursor(Qt.CursorShape.PointingHandCursor)
         regen.setToolTip("Issue a new personal QR code (the old one stops working)")
         regen.clicked.connect(self._regenerate_qr)
-        row.addWidget(regen)
 
         self._import_button = QPushButton("Import from file")
         self._import_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._import_button.setToolTip("Add or update employees from a CSV or XLSX file")
         self._import_button.clicked.connect(self._import_file)
-        row.addWidget(self._import_button)
 
         sample = QPushButton("Sample file")
         sample.setCursor(Qt.CursorShape.PointingHandCursor)
         sample.setToolTip("Save a CSV you can fill in and import")
         sample.clicked.connect(self._save_sample_file)
-        row.addWidget(sample)
 
-        return row
+        return [edit, view, self._toggle_button, regen, self._import_button, sample]
 
     # -- import --------------------------------------------------------------
     def _save_sample_file(self) -> None:
@@ -546,12 +573,7 @@ class EmployeePage(QWidget):
                 self._table.setItem(index, column, item)
 
             badge = ActiveBadge(employee.is_active)
-            holder = QWidget()
-            badge_layout = QHBoxLayout(holder)
-            badge_layout.setContentsMargins(4, 2, 4, 2)
-            badge_layout.addWidget(badge)
-            badge_layout.addStretch(1)
-            self._table.setCellWidget(index, 5, holder)
+            self._table.setCellWidget(index, 5, badge_cell(badge))
 
             for column, value in (
                 (6, clock.format_date(employee.date_added)),

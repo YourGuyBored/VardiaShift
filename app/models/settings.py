@@ -11,6 +11,7 @@ from app.constants import (
     ORG_NAME_DEFAULT,
     WEEKLY_GOAL_PRESETS,
 )
+from app.utils.appearance import ACCENT_NAMES, DEFAULT_ACCENT, resolve as resolve_accent
 from app.utils.time_utils import (
     DATE_FORMAT_PRESETS,
     TIME_FORMAT_PRESETS,
@@ -19,6 +20,7 @@ from app.utils.time_utils import (
 )
 
 GROUP_GENERAL = "General"
+GROUP_APPEARANCE = "Appearance"
 GROUP_WORK = "Work Hours"
 GROUP_ATTENDANCE = "Attendance"
 GROUP_KIOSK = "Attendance Kiosk"
@@ -100,6 +102,19 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
         "time_format", "Time format", TYPE_CHOICE, "12-hour (09:02 AM)", GROUP_GENERAL,
         choices=tuple(TIME_FORMAT_PRESETS.keys()),
+    ),
+    # -- Appearance ----------------------------------------------------------
+    SettingSpec(
+        "accent_color", "Accent colour", TYPE_CHOICE, DEFAULT_ACCENT, GROUP_APPEARANCE,
+        "The one colour VardiaShift uses for primary actions, the active "
+        "navigation item and live attendance state. Everything else stays the "
+        "same ink on white.",
+        choices=ACCENT_NAMES,
+    ),
+    SettingSpec(
+        "custom_accent", "Custom accent (hex)", TYPE_TEXT, "", GROUP_APPEARANCE,
+        "Overrides the named accent above, for example #14508C. Leave empty to "
+        "use the named colour.",
     ),
     # -- Work hours ----------------------------------------------------------
     SettingSpec(
@@ -264,6 +279,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
 SPEC_BY_KEY: dict[str, SettingSpec] = {spec.key: spec for spec in SETTING_SPECS}
 GROUPS: tuple[str, ...] = (
     GROUP_GENERAL,
+    GROUP_APPEARANCE,
     GROUP_WORK,
     GROUP_ATTENDANCE,
     GROUP_KIOSK,
@@ -343,6 +359,17 @@ class AppSettings:
     @property
     def time_format(self) -> str:
         return str(self.get("time_format"))
+
+    @property
+    def accent(self) -> dict[str, str]:
+        """The resolved colour set the whole app paints with.
+
+        A valid custom hex wins over the named accent; anything else falls back
+        to the named one, so a bad value can never leave the app unstyled.
+        """
+        return resolve_accent(
+            str(self.get("accent_color") or ""), str(self.get("custom_accent") or "")
+        )
 
     @property
     def default_weekly_goal_hours(self) -> int:

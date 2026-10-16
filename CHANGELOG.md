@@ -3,7 +3,87 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-16
+
+### Added
+
+* A new visual system: one stylesheet built from a token layer, so the accent
+  has a single source of truth instead of being duplicated across every screen.
+  The look is an "operations desk" - flat surfaces, hard edges, an ink rail, and
+  exactly one accent that means *live*. The default accent is a deep marine
+  (`#14508C`) rather than a stock brand blue, and the named accents were
+  contrast-checked. Files: `app/ui/theme.py`, `app/utils/appearance.py`.
+* An **Appearance** tab in Settings: pick one of six named accents or type a
+  custom hex colour, with a live preview of the rail, a primary button, a status
+  badge and a table row. A bad hex value is refused with a plain message rather
+  than an unstyled window. Files: `app/models/settings.py`,
+  `app/services/settings_service.py`, `app/ui/settings.py`,
+  `tests/test_appearance.py`.
+* A **Tardiness & missing hours** report: every day in a range with what was
+  late, what fell short, and the hours a supervisor has to patch, plus week,
+  month and per-employee summaries. Files: `app/services/report_service.py`,
+  `tests/test_tardiness.py`.
+* Webcam support that finds the camera instead of hoping it is device 0:
+  `list_cameras()` probes the first indices and the kiosk offers a camera
+  picker. A named camera is honoured exactly. Files: `app/qr/scanner.py`,
+  `app/ui/attendance_kiosk.py`, `tests/test_camera.py`.
+* Bulk attendance reads - minutes by employee, minutes by day, daily totals by
+  employee, and one day's records keyed by employee - so the dashboard and the
+  weekly report query the whole crew in a few queries instead of a few per
+  person. Each is checked against the single-employee read it replaces. Files:
+  `app/database/repositories.py`, `app/services/attendance_service.py`,
+  `tests/test_bulk_reads.py`.
+* `scripts/shoot_ui.py`, which renders every screen to a PNG under the offscreen
+  Qt platform, so the design can be reviewed without a display.
+
+### Fixed
+
+* **Reports and backups ignored a time-zone change made in Settings.** Both
+  services captured the clock once when they were built, so they kept the old
+  zone until the app was restarted. The visible symptom was an open session
+  measured against the wrong "now" and reported as most of a day. Both now read
+  the clock live, as the attendance service already did. Files:
+  `app/services/report_service.py`, `app/services/backup_service.py`,
+  `tests/test_reports.py`.
+* **The phone service could hand out a QR that opened on the PC and nowhere
+  else.** When a VPN or Tailscale held the default route, the address picked for
+  the check-in link was the tunnel's (Tailscale uses `100.64.0.0/10`), which a
+  phone on the Wi-Fi cannot reach. The address is now ranked - a real private
+  LAN address wins over a tunnel - and a machine whose only address is a tunnel
+  refuses to print the code and shows the reason in Settings instead. No extra
+  setup is needed on a normal network. Files: `app/phone/server.py`,
+  `app/ui/settings.py`, `tests/test_phone.py`.
+* The setup wizard drew each field's placeholder on top of its caption; the
+  fields are now a two-by-two grid inside a scroll area. Files:
+  `app/ui/setup_window.py`, `tests/test_login_layout.py`.
+* The dashboard's chart labels were clipped, and its "Best day" figure was the
+  busiest day's *total* hours shown as decimal hours, which reads as one person
+  working a 40-hour day. It is now "Busiest day" in the same `40h 40m` form as
+  every other duration. Files: `app/ui/dashboard.py`,
+  `tests/test_dashboard_chart.py`.
+* The kiosk prompt panel showed a literal `{PRIMARY_SOFT}` where a colour should
+  have been, and its clock, exit button and footer were hard to read against the
+  rail. Files: `app/ui/attendance_kiosk.py`.
+* Combo boxes had no drop-down arrow (Qt's stylesheet engine has no triangle
+  primitive), the login password field clipped its own border, and the employees
+  header overlapped its table. Files: `app/ui/widgets.py`,
+  `app/ui/login_window.py`, `app/ui/employee_management.py`.
+* Settings tabs elided their labels; the labels are shorter, with a
+  `tab_label(group)` helper as the single lookup. Files: `app/ui/settings.py`.
+* `TimeUtils.parse` tried `strptime` patterns before `fromisoformat`, which is
+  both slower and, since Python 3.11, narrower. It now tries `fromisoformat`
+  first and keeps `strptime` as the fallback. Files: `app/utils/time_utils.py`,
+  `tests/test_time_parsing.py`.
+* The README screenshots were regenerated for the new design.
+
+### Changed
+
+* Duplicated `[1.1.0]` heading removed, and the previous unreleased section
+  released as `[1.2.0]`, matching its tag.
+* `APP_VERSION`, `pyproject.toml` and the installer default are now `1.3.0`;
+  they had stayed at `1.0.0` through two tagged releases.
+
+## [1.2.0] - 2026-10-07
 
 ### Added
 
@@ -150,8 +230,6 @@ All notable changes to VardiaShift are documented here. The format follows
    presets, visible on the Settings page.
 7. Settings → **Advanced** tab: the four rarely used settings are there and
    still save.
-
-## [1.1.0] - 2026-10-07
 
 ## [1.1.0] - 2026-10-07
 

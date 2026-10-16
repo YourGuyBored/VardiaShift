@@ -1076,11 +1076,14 @@ def test_application_logout_flow_returns_to_login(context, qt_app, admin_session
 # -- table badge rendering ---------------------------------------------------
 def test_status_badge_uses_tinted_background_not_tinted_blue(context, qt_app):
     """Qt only understands #AARRGGBB - a trailing alpha corrupts the color."""
-    from app.ui.widgets import STATUS_COLORS, StatusBadge, _tinted
+    from app.ui.widgets import StatusBadge, _tinted, status_color
     from app.ui import theme
 
     assert _tinted("#94A3B8", "1A") == "#1A94A3B8"
     assert _tinted("not-a-color", "1A") == "not-a-color"
+
+    # Resolved at paint time, so a change of accent reaches existing badges.
+    assert status_color("not_in") == theme.TEXT_SOFT
 
     badge = StatusBadge("not_in")
     assert badge.text() == "Not In"
@@ -1198,45 +1201,48 @@ def test_kiosk_exit_lockout_after_repeated_failures(context, qt_app, admin_sessi
 
 def test_kiosk_repeated_enter_exit_cycles(context, qt_app, admin_session, team):
     """Three full cycles: open, gate-accepted close, back to main window."""
-    from app.main import build_pages
-    from app.ui.main_window import MainWindow
+    from app.main import Application
 
-    window = MainWindow(context)
-    build_pages(window, context)
+    app = Application(context)
+    app.create_qt_app()
+    app._show_main_window()
     try:
         for _ in range(3):
-            window.open_kiosk()
+            app.open_kiosk()
             qt_app.processEvents()
-            assert window._kiosk is not None
+            assert app.kiosk is not None
             # Simulate a passed password gate, then the guarded close.
-            window._kiosk._exit_allowed = True
-            window._kiosk.close()
+            app.kiosk._exit_allowed = True
+            app.kiosk.close()
             qt_app.processEvents()
-            assert window._kiosk is None
-            assert window.isVisible()
+            assert app.kiosk is None
+            assert app.window.isVisible()
     finally:
-        window.close()
+        app.shutdown()
 
 
 def test_main_window_close_drops_kiosk_without_gate(
     context, qt_app, admin_session, team, monkeypatch
 ):
     """Quitting the app must never trap anyone behind the password gate."""
-    from app.main import build_pages
-    from app.ui.main_window import MainWindow
+    from app.main import Application
 
-    window = MainWindow(context)
-    build_pages(window, context)
-    window.open_kiosk()
+    app = Application(context)
+    app.create_qt_app()
+    app._show_main_window()
+    app.open_kiosk()
     qt_app.processEvents()
 
     def fail_if_gated() -> None:
         raise AssertionError("password gate must not appear during shutdown")
 
-    monkeypatch.setattr(window._kiosk, "_request_exit", fail_if_gated)
-    window.close()
+    monkeypatch.setattr(app.kiosk, "_request_exit", fail_if_gated)
+    # The kiosk is owned by the Application, so a real quit has to release it
+    # even though the admin window's close event never sees it.
+    app.window.close()
     qt_app.processEvents()
-    assert window._kiosk is None
+    app.shutdown()
+    assert app.kiosk is None
 
 
 # -- camera recovery ---------------------------------------------------------
@@ -1373,11 +1379,12 @@ def test_two_step_mode_unchanged_when_auto_mode_off(
 def test_settings_has_phone_tab_with_service_controls(
     context, qt_app, admin_session
 ):
-    from app.ui.settings import SettingsPage
+    from app.models.settings import GROUP_PHONE
+    from app.ui.settings import SettingsPage, tab_label
 
     page = SettingsPage(context)
     labels = [page._tabs.tabText(i) for i in range(page._tabs.count())]
-    assert "Phone Attendance" in labels
+    assert tab_label(GROUP_PHONE) in labels
     assert hasattr(page, "_phone_status")
     assert hasattr(page, "_phone_start_button")
     assert hasattr(page, "_phone_stop_button")
@@ -1509,11 +1516,12 @@ def test_reports_page_has_sheets_button_with_helpful_state(context, qt_app, team
 
 
 def test_settings_has_sheets_tab_with_key_status(context, qt_app, admin_session):
-    from app.ui.settings import SettingsPage
+    from app.models.settings import GROUP_SHEETS
+    from app.ui.settings import SettingsPage, tab_label
 
     page = SettingsPage(context)
     labels = [page._tabs.tabText(i) for i in range(page._tabs.count())]
-    assert "Google Sheets" in labels
+    assert tab_label(GROUP_SHEETS) in labels
     assert hasattr(page, "_sheets_status")
     assert "No service account" in page._sheets_status.text()
     assert page._editors["sheets_enabled"] is not None

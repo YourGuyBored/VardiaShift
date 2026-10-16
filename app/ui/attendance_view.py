@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from PySide6.QtCore import QDate, QTime, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
@@ -34,7 +33,9 @@ from app.ui.widgets import (
     EmptyState,
     PrimaryButton,
     ProgressBarRow,
+    Select,
     StatusBadge,
+    badge_cell,
     clear_table_widgets,
 )
 
@@ -312,12 +313,12 @@ class AttendancePage(QWidget):
         top = QHBoxLayout()
         top.setSpacing(8)
         top.addWidget(QLabel("Employee"))
-        self._employee_box = QComboBox()
+        self._employee_box = Select()
         self._employee_box.setMinimumWidth(230)
         self._employee_box.currentIndexChanged.connect(self._on_employee_changed)
         top.addWidget(self._employee_box, 2)
 
-        self._range_box = QComboBox()
+        self._range_box = Select()
         for label, key in (
             ("Today", "today"),
             ("This week", "week"),
@@ -426,7 +427,7 @@ class AttendancePage(QWidget):
         self._audit_search.textChanged.connect(lambda _: self._load_audit())
         toolbar.addWidget(self._audit_search, 2)
 
-        self._audit_action = QComboBox()
+        self._audit_action = Select()
         self._audit_action.addItem("All actions", "")
         self._audit_action.currentIndexChanged.connect(lambda _: self._load_audit())
         toolbar.addWidget(self._audit_action, 1)
@@ -595,12 +596,7 @@ class AttendancePage(QWidget):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._today_table.setItem(index, column, item)
             badge = StatusBadge(record.status)
-            holder = QWidget()
-            badge_layout = QHBoxLayout(holder)
-            badge_layout.setContentsMargins(4, 2, 4, 2)
-            badge_layout.addWidget(badge)
-            badge_layout.addStretch(1)
-            self._today_table.setCellWidget(index, 5, holder)
+            self._today_table.setCellWidget(index, 5, badge_cell(badge))
 
             source_item = QTableWidgetItem(self.context.attendance.source_label(record.source))
             source_item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
@@ -651,12 +647,7 @@ class AttendancePage(QWidget):
                     item.setToolTip("This record was corrected by an administrator.")
                 self._history_table.setItem(index, column, item)
             badge = StatusBadge(record.status)
-            holder = QWidget()
-            badge_layout = QHBoxLayout(holder)
-            badge_layout.setContentsMargins(4, 2, 4, 2)
-            badge_layout.addWidget(badge)
-            badge_layout.addStretch(1)
-            self._history_table.setCellWidget(index, 4, holder)
+            self._history_table.setCellWidget(index, 4, badge_cell(badge))
 
         self._history_table.setVisible(bool(records))
         self._history_empty.setVisible(not records)
@@ -724,12 +715,7 @@ class AttendancePage(QWidget):
                     )
                 self._open_table.setItem(index, column, item)
             badge = StatusBadge(ATTENDANCE_MISSING, "Needs closing")
-            holder = QWidget()
-            badge_layout = QHBoxLayout(holder)
-            badge_layout.setContentsMargins(4, 2, 4, 2)
-            badge_layout.addWidget(badge)
-            badge_layout.addStretch(1)
-            self._open_table.setCellWidget(index, 4, holder)
+            self._open_table.setCellWidget(index, 4, badge_cell(badge))
         self._open_table.setVisible(bool(records))
         self._open_empty.setVisible(not records)
 

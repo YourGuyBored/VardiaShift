@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -29,7 +28,7 @@ from PySide6.QtWidgets import (
 from app.constants import QR_EMPLOYEE, QR_TIME_IN, QR_TIME_OUT
 from app.phone.server import PhoneAddressError
 from app.ui import theme
-from app.ui.widgets import Card, EmptyState, PrimaryButton, clear_table_widgets
+from app.ui.widgets import Card, EmptyState, PrimaryButton, Select, clear_table_widgets
 
 EMPLOYEE_COLUMNS = ["Employee ID", "Full Name", "Department", "Status", "Date Added"]
 
@@ -272,7 +271,7 @@ class QRManagementPage(QWidget):
         row2.addWidget(print_all)
         card.add_layout(row2)
 
-        self._kind_box = QComboBox()
+        self._kind_box = Select()
         self._kind_box.addItem("Time In", QR_TIME_IN)
         self._kind_box.addItem("Time Out", QR_TIME_OUT)
         self._kind_box.currentIndexChanged.connect(self._show_kind)

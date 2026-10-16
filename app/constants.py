@@ -4,7 +4,7 @@ from __future__ import annotations
 
 APP_NAME = "VardiaShift"
 APP_SLUG = "vardiashift"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.3.0"
 APP_TAGLINE = "Employee Time-In / Time-Out & Attendance"
 
 ORG_NAME_DEFAULT = "VardiaShift"

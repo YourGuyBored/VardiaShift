@@ -295,3 +295,25 @@ def test_sanitize_spreadsheet_cell_only_touches_risky_text():
     assert sanitize_spreadsheet_cell(42) == 42
     assert sanitize_spreadsheet_cell(None) is None
     assert sanitize_spreadsheet_cell("") == ""
+
+
+# -- settings changes reach the reports --------------------------------------
+def test_reports_read_the_clock_live(context, admin):
+    """A time zone set after start-up must reach reports without a restart.
+
+    The service used to snapshot the clock in ``__init__``, so reports kept the
+    old zone while the rest of the app moved on - and an open session measured
+    against the wrong zone came out as most of a day.
+    """
+    assert context.reports.clock.timezone_name == "UTC"
+    context.settings.set("timezone", "Asia/Manila", "admin")
+    assert context.reports.clock.timezone_name == "Asia/Manila"
+
+    context.settings.set("date_format", "DD/MM/YYYY", "admin")
+    assert context.reports.clock.date_format == "DD/MM/YYYY"
+
+
+def test_backups_read_the_clock_live(context, admin):
+    assert context.backups.clock.timezone_name == "UTC"
+    context.settings.set("timezone", "Europe/London", "admin")
+    assert context.backups.clock.timezone_name == "Europe/London"

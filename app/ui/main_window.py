@@ -37,29 +37,35 @@ NAV_ITEMS = [
 
 
 class Sidebar(QFrame):
-    """Dark navigation rail."""
+    """The rail: identity, navigation, the kiosk, and who is signed in.
+
+    The brand sits on its own darker plate so the product name reads as a
+    masthead rather than as another navigation item, and the whole rail is
+    width-locked so a long organisation name cannot push the buttons about.
+    """
 
     navigate = Signal(str)
     open_kiosk = Signal()
     logout = Signal()
 
+    WIDTH = 236
+
     def __init__(self, organization: str, username: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("Sidebar")
-        self.setFixedWidth(232)
+        self.setFixedWidth(self.WIDTH)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 20, 16, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        brand = QLabel(APP_NAME.upper())
-        brand.setObjectName("SidebarTitle")
-        layout.addWidget(brand)
+        layout.addWidget(self._build_brand())
 
-        tagline = QLabel("ATTENDANCE")
-        tagline.setObjectName("SidebarSubtitle")
-        layout.addWidget(tagline)
-        layout.addSpacing(18)
+        nav = QVBoxLayout()
+        nav.setContentsMargins(
+            theme.SPACING_S, theme.SPACING_M, theme.SPACING_S, theme.SPACING_S
+        )
+        nav.setSpacing(theme.SPACING_2XS)
 
         self._buttons: dict[str, QPushButton] = {}
         for key, label in NAV_ITEMS:
@@ -68,35 +74,62 @@ class Sidebar(QFrame):
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, k=key: self.navigate.emit(k))
-            layout.addWidget(button)
+            nav.addWidget(button)
             self._buttons[key] = button
 
-        layout.addSpacing(12)
+        nav.addSpacing(theme.SPACING_S)
 
-        kiosk = QPushButton("\U0001F5A5  Attendance Kiosk")
+        kiosk = QPushButton("Attendance Kiosk")
         kiosk.setObjectName("NavKiosk")
         kiosk.setCursor(Qt.CursorShape.PointingHandCursor)
         kiosk.setToolTip("Full-screen employee scanning screen (F11)")
         kiosk.clicked.connect(self.open_kiosk.emit)
-        layout.addWidget(kiosk)
+        nav.addWidget(kiosk)
 
+        layout.addLayout(nav)
         layout.addStretch(1)
+        layout.addWidget(self._build_identity(username, organization))
+
+    def _build_brand(self) -> QWidget:
+        plate = QWidget()
+        plate.setObjectName("SidebarBrand")
+        layout = QVBoxLayout(plate)
+        layout.setContentsMargins(
+            theme.SPACING_M, theme.SPACING_M, theme.SPACING_S, theme.SPACING_M
+        )
+        layout.setSpacing(theme.SPACING_2XS)
+
+        brand = QLabel(APP_NAME.upper())
+        brand.setObjectName("SidebarTitle")
+        layout.addWidget(brand)
+
+        tagline = QLabel("ATTENDANCE")
+        tagline.setObjectName("SidebarSubtitle")
+        layout.addWidget(tagline)
+        return plate
+
+    def _build_identity(self, username: str, organization: str) -> QWidget:
+        block = QWidget()
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(
+            theme.SPACING_M, theme.SPACING_S, theme.SPACING_M, theme.SPACING_M
+        )
+        layout.setSpacing(theme.SPACING_XS)
 
         divider = QFrame()
-        divider.setObjectName("Divider")
-        divider.setStyleSheet(f"background: #1E293B; max-height: 1px;")
+        divider.setObjectName("RailDivider")
+        divider.setFixedHeight(1)
         layout.addWidget(divider)
-        layout.addSpacing(8)
 
         self._user = QLabel(username)
         self._user.setObjectName("SidebarUser")
+        self._user.setWordWrap(True)
         layout.addWidget(self._user)
 
         self._role = QLabel("Administrator")
         self._role.setObjectName("SidebarRole")
+        self._role.setWordWrap(True)
         layout.addWidget(self._role)
-
-        layout.addSpacing(8)
 
         logout = QPushButton("Sign out")
         logout.setObjectName("NavLogout")
@@ -105,10 +138,11 @@ class Sidebar(QFrame):
         layout.addWidget(logout)
 
         footer = QLabel(f"v{APP_VERSION}")
-        footer.setObjectName("SidebarRole")
+        footer.setObjectName("SidebarVersion")
         layout.addWidget(footer)
 
         self._organization = organization
+        return block
 
     def set_user(self, username: str, organization: str = "") -> None:
         self._user.setText(username)

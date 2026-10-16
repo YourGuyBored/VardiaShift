@@ -34,27 +34,29 @@ ACCENT_NAMES: tuple[str, ...] = (
 )
 
 #: Named accents offered in Settings, each a complete set so the contrast is
-#: already known to work.
+#: already known to work. The default is a deep marine rather than a stock
+#: "brand blue": it is the colour of a payroll ledger, and it has to stay
+#: legible as a left rule on the dark rail.
 ACCENTS: dict[str, dict[str, str]] = {
     "Blue (default)": {
-        "PRIMARY": "#2563EB",
-        "PRIMARY_DARK": "#1D4ED8",
-        "PRIMARY_SOFT": "#DBEAFE",
-        "BG": "#0F172A",
-        "BG_ACCENT": "#1E3A8A",
-        "ACCENT_LIGHT": "#60A5FA",
+        "PRIMARY": "#14508C",
+        "PRIMARY_DARK": "#0E3D6E",
+        "PRIMARY_SOFT": "#DCE7F4",
+        "BG": "#0B1622",
+        "BG_ACCENT": "#14304D",
+        "ACCENT_LIGHT": "#5B8FC9",
     },
     "Green": {
         "PRIMARY": "#16A34A",
-        "PRIMARY_DARK": "#15803D",
+        "PRIMARY_DARK": "#14532D",
         "PRIMARY_SOFT": "#DCFCE7",
         "BG": "#0B1F16",
         "BG_ACCENT": "#14532D",
         "ACCENT_LIGHT": "#4ADE80",
     },
     "Purple": {
-        "PRIMARY": "#7C3AED",
-        "PRIMARY_DARK": "#6D28D9",
+        "PRIMARY": "#6D28D9",
+        "PRIMARY_DARK": "#4C1D95",
         "PRIMARY_SOFT": "#EDE9FE",
         "BG": "#1E1B2E",
         "BG_ACCENT": "#4C1D95",
@@ -69,16 +71,16 @@ ACCENTS: dict[str, dict[str, str]] = {
         "ACCENT_LIGHT": "#2DD4BF",
     },
     "Orange": {
-        "PRIMARY": "#EA580C",
-        "PRIMARY_DARK": "#C2410C",
+        "PRIMARY": "#C2410C",
+        "PRIMARY_DARK": "#7C2D12",
         "PRIMARY_SOFT": "#FFEDD5",
         "BG": "#1F1710",
         "BG_ACCENT": "#7C2D12",
         "ACCENT_LIGHT": "#FB923C",
     },
     "Slate": {
-        "PRIMARY": "#475569",
-        "PRIMARY_DARK": "#334155",
+        "PRIMARY": "#334155",
+        "PRIMARY_DARK": "#1E293B",
         "PRIMARY_SOFT": "#E2E8F0",
         "BG": "#0F172A",
         "BG_ACCENT": "#1E293B",

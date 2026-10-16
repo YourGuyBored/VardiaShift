@@ -5,7 +5,9 @@ from app.phone.server import (
     DEFAULT_PORT,
     PhoneAddressError,
     PhoneServer,
+    lan_addresses,
     lan_ip,
+    lan_warning,
     phone_base_url,
     phone_url_for_phone,
 )
@@ -15,7 +17,9 @@ __all__ = [
     "DEFAULT_PORT",
     "PhoneAddressError",
     "PhoneServer",
+    "lan_addresses",
     "lan_ip",
+    "lan_warning",
     "phone_base_url",
     "phone_url_for_phone",
 ]

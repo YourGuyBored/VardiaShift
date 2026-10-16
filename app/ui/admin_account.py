@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from app.services.authentication_service import AuthenticationError
 from app.ui import theme
-from app.ui.widgets import ActiveBadge, Card, PrimaryButton
+from app.ui.widgets import ActiveBadge, Card, PrimaryButton, badge_cell
 from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password
 
@@ -189,6 +189,7 @@ class AdminAccountPage(QWidget):
         self._table = QTableWidget(0, len(ADMIN_COLUMNS))
         self._table.setHorizontalHeaderLabels(ADMIN_COLUMNS)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(36)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -289,12 +290,7 @@ class AdminAccountPage(QWidget):
             for column, value in enumerate(values):
                 self._table.setItem(index, column, QTableWidgetItem(value))
             badge = ActiveBadge(record.is_active)
-            holder = QWidget()
-            layout = QHBoxLayout(holder)
-            layout.setContentsMargins(4, 2, 4, 2)
-            layout.addWidget(badge)
-            layout.addStretch(1)
-            self._table.setCellWidget(index, 3, holder)
+            self._table.setCellWidget(index, 3, badge_cell(badge))
 
 
 __all__ = ["ADMIN_COLUMNS", "AdminAccountPage", "PasswordDialog"]

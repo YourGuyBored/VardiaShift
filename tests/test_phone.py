@@ -536,6 +536,78 @@ def test_base_url_still_works_without_a_lan_address(monkeypatch):
         phone_module.phone_url_for_phone(None)
 
 
+# -- address selection -------------------------------------------------------
+def _candidates(monkeypatch, *addresses: str) -> None:
+    """Pin the addresses the machine appears to have, best-found order."""
+    import app.phone.server as phone_module
+
+    monkeypatch.setattr(phone_module, "_ipv4_candidates", lambda: list(addresses))
+
+
+def test_lan_address_prefers_a_real_lan_over_a_tunnel(monkeypatch):
+    """A VPN that owns the default route must not become the phones' host.
+
+    This is the "the page opens on the PC and nowhere else" bug: the tunnel
+    address reaches this computer and no phone on the Wi-Fi.
+    """
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "100.117.213.112", "192.168.1.50")
+    assert phone_module.lan_ip() == "192.168.1.50"
+    assert phone_module.lan_addresses()[0] == "192.168.1.50"
+
+
+def test_lan_address_ignores_loopback_and_link_local(monkeypatch):
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "127.0.0.1", "169.254.10.10", "10.0.0.7")
+    assert phone_module.lan_ip() == "10.0.0.7"
+    assert "127.0.0.1" not in phone_module.lan_addresses()
+
+
+def test_lan_address_is_none_when_only_loopback_exists(monkeypatch):
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "127.0.0.1")
+    assert phone_module.lan_ip() is None
+    assert phone_module.lan_addresses() == []
+
+
+def test_phone_url_refuses_a_tunnel_only_address(monkeypatch):
+    """A QR that only works on the PC itself must not be handed out."""
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "100.117.213.112")
+    with pytest.raises(phone_module.PhoneAddressError) as excinfo:
+        phone_module.phone_url_for_phone(None)
+    assert "VPN" in str(excinfo.value)
+
+
+def test_lan_warning_is_quiet_on_a_normal_network(monkeypatch):
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "192.168.1.50")
+    assert phone_module.lan_warning() is None
+
+
+def test_lan_warning_names_a_tunnel(monkeypatch):
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "100.117.213.112")
+    warning = phone_module.lan_warning()
+    assert warning is not None
+    assert "VPN" in warning
+
+
+def test_lan_warning_when_there_is_no_network(monkeypatch):
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "127.0.0.1")
+    warning = phone_module.lan_warning()
+    assert warning is not None
+    assert "network" in warning
+
+
 # -- auto-start --------------------------------------------------------------
 def test_autostart_off_by_default(context):
     started, _message = context.maybe_autostart_phone()

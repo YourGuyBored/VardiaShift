@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time as _time
 from pathlib import Path
 
 from app.models.attendance import (
@@ -70,7 +70,15 @@ class ReportService:
         self.attendance = attendance
         self.settings = settings
         self.repos = attendance.repos
-        self.clock = settings.time_utils()
+
+    @property
+    def clock(self) -> TimeUtils:
+        """Read live, so a time-zone or format change reaches reports at once.
+
+        A stale zone measures an open session against the wrong "now" and can
+        report it as most of a day.
+        """
+        return self.settings.time_utils()
 
     # -- daily ---------------------------------------------------------------
     def daily_report(
@@ -175,17 +183,19 @@ class ReportService:
         if employee_id is not None:
             employees = [e for e in employees if e.employee_id == employee_id]
 
+        # Two queries for the whole crew instead of two per employee.
+        worked_by_employee = self.repos.attendance.minutes_by_employee(start, end, now_iso)
+        totals_by_employee = self.repos.attendance.daily_totals_by_employee(start, end)
+
         rows: list[list] = []
         total_worked = 0
         total_goal = 0
         for employee in employees:
-            worked = self.repos.attendance.minutes_for_employee(
-                employee.employee_id, start, end, now_iso
-            )
+            worked = worked_by_employee.get(employee.employee_id, 0)
             goal = self.settings.goal_minutes_for(employee.weekly_goal_hours)
             remaining = max(0, goal - worked)
             overtime = max(0, worked - goal) if goal else 0
-            totals = self.repos.attendance.daily_totals(employee.employee_id, start, end)
+            totals = totals_by_employee.get(employee.employee_id, {})
             days = sum(1 for value in totals.values() if int(value.get("minutes") or 0) > 0)
             status = self._weekly_status(worked, goal, employee)
             rows.append(
@@ -421,6 +431,221 @@ class ReportService:
             summary=[("Entries", str(len(logs)))],
         )
 
+    # -- tardiness -----------------------------------------------------------
+    def tardiness_report(
+        self, start: date, end: date, employee_id: int | None = None
+    ) -> ReportResult:
+        """Day by day: what was late, what was short, and what to patch.
+
+        This is the report a supervisor actually works from - it names the
+        gap in hours, not just "under target" - so every day in the range is
+        listed, including the days with nothing at all on them.
+        """
+        clock = self.clock
+        if end < start:
+            start, end = end, start
+
+        headers = [
+            "Date",
+            "Time In",
+            "Time Out",
+            "Hours",
+            "Expected",
+            "Late By",
+            "Missing To Patch",
+            "Issue",
+        ]
+
+        settings = self.settings.settings
+        shift_start = settings.shift_start
+        shift_end = settings.shift_end
+        grace = settings.grace_period_minutes
+        expected_minutes = _minutes_of_day(shift_end) - _minutes_of_day(shift_start)
+        if expected_minutes < 0:  # a shift that crosses midnight
+            expected_minutes += 24 * 60
+
+        employees = self.repos.employees.list_all()
+        if employee_id is not None:
+            employees = [e for e in employees if e.employee_id == employee_id]
+
+        start_key = start.strftime("%Y-%m-%d")
+        end_key = end.strftime("%Y-%m-%d")
+        days = clock.date_range(start, end)
+        records = self.repos.attendance.list_for_range(start_key, end_key, employee_id)
+        by_employee_day: dict[tuple[int, str], AttendanceRecord] = {
+            (record.employee_id, record.work_date): record for record in records
+        }
+
+        rows: list[list] = []
+        total_missing = 0
+        for day in days:
+            key = day.strftime("%Y-%m-%d")
+            for employee in employees:
+                record = by_employee_day.get((employee.employee_id, key))
+                row = self._tardiness_row(
+                    day, record, shift_start, grace, expected_minutes
+                )
+                rows.append(row)
+                patch = row[headers.index("Missing To Patch")]
+                if patch != "-":
+                    total_missing += _parse_duration(patch)
+
+        summary: list[tuple[str, str]] = [
+            ("Period", f"{clock.format_date(start)} - {clock.format_date(end)}"),
+            ("Days", str(len(days))),
+            ("Expected shift", f"{expected_minutes // 60}h {expected_minutes % 60:02d}m"),
+            ("Grace period", f"{grace} min"),
+            ("Total missing to patch", clock.format_duration(total_missing)),
+        ]
+        week = clock.week_bounds(start)
+        month = clock.month_bounds(start)
+        summary.append(
+            (
+                f"Week {clock.format_date(week.start)} - {clock.format_date(week.end)}",
+                clock.format_duration(
+                    self._missing_over(employees, by_employee_day, week.start, week.end, grace, expected_minutes)
+                ),
+            )
+        )
+        summary.append(
+            (
+                f"Month {month.start.strftime('%B %Y')}",
+                clock.format_duration(
+                    self._missing_over(employees, by_employee_day, month.start, month.end, grace, expected_minutes)
+                ),
+            )
+        )
+        for employee in employees:
+            summary.append(
+                (
+                    employee.full_name,
+                    clock.format_duration(
+                        self._missing_over(
+                            employees=[employee],
+                            by_employee_day=by_employee_day,
+                            start=start,
+                            end=end,
+                            grace=grace,
+                            expected_minutes=expected_minutes,
+                        )
+                    ),
+                )
+            )
+
+        return ReportResult(
+            title=f"Tardiness & Missing Hours - {employee.employee_code if employees else 'All staff'}",
+            subtitle=(
+                f"{self.settings.settings.organization_name}  •  "
+                f"{start_key} to {end_key}  •  {len(rows)} row(s)"
+            ),
+            headers=headers,
+            rows=rows,
+            summary=summary,
+            totals=[
+                "TOTAL",
+                "",
+                "",
+                "",
+                "",
+                "",
+                clock.format_duration(total_missing),
+                f"{len(rows)} row(s)",
+            ],
+        )
+
+    def _missing_over(
+        self,
+        employees,
+        by_employee_day: dict[tuple[int, str], AttendanceRecord],
+        start: date,
+        end: date,
+        grace: int,
+        expected_minutes: int,
+    ) -> int:
+        """Hours still to patch across a window, summed per day."""
+        clock = self.clock
+        total = 0
+        for day in clock.date_range(start, end):
+            key = day.strftime("%Y-%m-%d")
+            for employee in employees:
+                row = self._tardiness_row(
+                    day,
+                    by_employee_day.get((employee.employee_id, key)),
+                    self.settings.settings.shift_start,
+                    grace,
+                    expected_minutes,
+                )
+                patch = row[7]
+                if patch != "-":
+                    total += _parse_duration(patch)
+        return total
+
+    def _tardiness_row(
+        self,
+        day: date,
+        record: AttendanceRecord | None,
+        shift_start: str,
+        grace: int,
+        expected_minutes: int,
+    ) -> list:
+        """One day for one employee: the issue, and the hours it costs."""
+        clock = self.clock
+        issues: list[str] = []
+        minutes = 0
+        late_minutes = 0
+
+        time_in = TimeUtils.parse(record.time_in) if record and record.time_in else None
+        time_out = TimeUtils.parse(record.time_out) if record and record.time_out else None
+
+        if time_in is not None:
+            minutes = (
+                TimeUtils.elapsed_minutes(time_in, time_out)
+                if time_out is not None
+                else TimeUtils.elapsed_minutes(time_in, self._now())
+            )
+
+        if record is None:
+            issues.append("Absent")
+        else:
+            if time_in is not None:
+                scheduled = _combine(day, shift_start)
+                late = TimeUtils.elapsed_minutes(scheduled, time_in) - grace
+                if late > 0:
+                    late_minutes = late
+                    issues.append(f"Late {clock.format_duration(late)}")
+            if time_out is None:
+                issues.append("Missing time-out")
+            elif minutes < expected_minutes - grace:
+                issues.append(f"Short hours ({clock.format_duration(minutes)} of "
+                              f"{clock.format_duration(expected_minutes)})")
+
+        if not issues:
+            issues.append("On time")
+
+        # What the supervisor has to put right: the whole shift when absent,
+        # otherwise the shortfall against the expected hours.
+        if record is None:
+            missing = expected_minutes
+        else:
+            missing = max(0, expected_minutes - minutes)
+            if time_in is not None and time_out is not None and minutes >= expected_minutes:
+                missing = 0
+
+        return [
+            clock.format_date(day),
+            clock.format_time(record.time_in) if record and record.time_in else "-",
+            clock.format_time(record.time_out) if record and record.time_out else "-",
+            clock.format_duration(minutes) if record is not None else "0h 00m",
+            clock.format_duration(expected_minutes),
+            clock.format_duration(late_minutes) if late_minutes else "-",
+            clock.format_duration(missing) if missing else "-",
+            "; ".join(issues),
+        ]
+
+    def _now(self) -> datetime:
+        """The service's clock, so a frozen test clock reaches this report."""
+        return self.attendance.now()
+
     # -- exports -------------------------------------------------------------
     def write_csv(self, report: ReportResult, destination: Path | str) -> Path:
         path = Path(destination)
@@ -535,6 +760,30 @@ class ReportService:
 
 def clock_format(minutes: int) -> str:
     return TimeUtils.format_duration(minutes)
+
+
+def _minutes_of_day(value: str) -> int:
+    """``"09:00"`` to minutes past midnight."""
+    hour, _, minute = (value or "00:00").partition(":")
+    try:
+        return int(hour) * 60 + int(minute or 0)
+    except ValueError:
+        return 0
+
+
+def _combine(day: date, value: str) -> datetime:
+    """The shift start on ``day`` as a real timestamp."""
+    minutes = _minutes_of_day(value)
+    return datetime.combine(day, _time(minutes // 60, minutes % 60))
+
+
+def _parse_duration(value: str) -> int:
+    """``"4h 30m"`` back to minutes, so totals can be summed."""
+    hours, _, rest = value.partition("h")
+    try:
+        return int(hours) * 60 + int((rest or "0").strip().rstrip("m") or 0)
+    except ValueError:
+        return 0
 
 
 __all__ = ["ReportResult", "ReportService", "ReportRow", "XLSX_AVAILABLE"]

@@ -598,16 +598,21 @@ class AttendanceService:
         goal_minutes = 0
         working = closed = missing = 0
 
+        # Three queries for the whole crew instead of three per employee: this
+        # loop runs on every dashboard repaint and on every clock minute.
+        now_iso = TimeUtils.to_iso(now)
+        records_today = self.repos.attendance.records_for_date(today_str)
+        day_totals = self.repos.attendance.minutes_by_employee(
+            today_str, today_str, now_iso
+        )
+        week_totals = self.repos.attendance.minutes_by_employee(start, end, now_iso)
+
         for employee in employees:
-            record = self.repos.attendance.get_for_date(employee.employee_id, today_str)
+            record = records_today.get(employee.employee_id)
             emp_goal = self.goal_minutes(employee)
             goal_minutes += emp_goal
-            day_minutes = self.repos.attendance.minutes_for_employee(
-                employee.employee_id, today_str, today_str, TimeUtils.to_iso(now)
-            )
-            wk_minutes = self.repos.attendance.minutes_for_employee(
-                employee.employee_id, start, end, TimeUtils.to_iso(now)
-            )
+            day_minutes = day_totals.get(employee.employee_id, 0)
+            wk_minutes = week_totals.get(employee.employee_id, 0)
             today_minutes += day_minutes
             week_minutes += wk_minutes
 

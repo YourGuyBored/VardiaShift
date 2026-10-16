@@ -71,6 +71,16 @@ class SettingsService:
                     "Pick a city from the list, for example Europe/London or "
                     "Asia/Manila."
                 )
+        if key == "custom_accent":
+            from app.utils.appearance import is_valid_color
+
+            custom = str(coerced).strip()
+            # Empty is a deliberate "use the named accent", not a mistake.
+            if custom and not is_valid_color(custom):
+                return (
+                    f"{spec.label} must be a hex colour such as #14508C, "
+                    f"not '{custom}'."
+                )
         if spec.type == "choice" and spec.choices and coerced not in spec.choices:
             # Long choice lists (time zones) would produce an unusable message.
             if len(spec.choices) <= 12:

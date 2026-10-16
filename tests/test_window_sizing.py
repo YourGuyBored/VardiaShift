@@ -206,17 +206,18 @@ def test_kiosk_windowed_mode_can_be_minimized(context, qt_app):
 
 def test_main_window_returns_to_maximized_after_kiosk(context, qt_app):
     """Leaving the kiosk must not silently drop a maximized window."""
-    from app.ui.main_window import MainWindow
+    from app.main import Application
 
-    window = MainWindow(context)
-    window.show()
-    window.showMaximized()
+    app = Application(context)
+    app.create_qt_app()
+    app._show_main_window()
+    app.window.showMaximized()
     qt_app.processEvents()
 
-    window.open_kiosk()
+    app.open_kiosk()
     qt_app.processEvents()
-    window._on_kiosk_finished()
+    app._on_kiosk_finished()
     qt_app.processEvents()
 
-    assert window.isMaximized() is True
-    window.deleteLater()
+    assert app.window.isMaximized() is True
+    app.shutdown()

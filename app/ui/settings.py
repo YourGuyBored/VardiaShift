@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
 from app.constants import WEEKLY_GOAL_PRESETS
 from app.models.settings import (
     GROUP_ADVANCED,
+    GROUP_APPEARANCE,
     GROUP_ATTENDANCE,
     GROUP_GENERAL,
     GROUP_KIOSK,
@@ -44,9 +46,76 @@ from app.models.settings import (
 )
 from app.services.backup_service import BackupError
 from app.ui import theme
-from app.ui.widgets import Card, PrimaryButton
+from app.ui.widgets import Card, PrimaryButton, Select
+from app.utils.appearance import ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT
 
 BACKUP_COLUMNS = ["File", "Created", "Size"]
+TAB_BACKUP = "Backup"
+
+#: Tab labels are shorter than the group names: ten full-length tabs do not fit
+#: across the window, and Qt answers an overflowing tab bar by eliding every
+#: label instead of scrolling. Settings > Advanced and the backup tools still
+#: name themselves in full inside the page.
+TAB_LABELS = {
+    GROUP_KIOSK: "Kiosk",
+    GROUP_PHONE: "Phone",
+    GROUP_SHEETS: "Sheets",
+}
+
+
+def tab_label(group: str) -> str:
+    """The tab caption for a settings group."""
+    return TAB_LABELS.get(group, group)
+
+
+class _AccentSwatch(QWidget):
+    """A named accent as a colour block with its name underneath."""
+
+    def __init__(self, name: str, accent: dict[str, str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._accent = accent
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(theme.SPACING_2XS)
+
+        self._chip = QPushButton(self)
+        self._chip.setCheckable(True)
+        self._chip.setFixedHeight(44)
+        self._chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._chip.setToolTip(f"{name} - {accent['PRIMARY']}")
+        self._chip.setAccessibleName(f"{name} accent, {accent['PRIMARY']}")
+        layout.addWidget(self._chip)
+
+        caption = QLabel(name)
+        caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        caption.setObjectName("CardHint")
+        layout.addWidget(caption)
+        self._repaint()
+
+    @property
+    def name(self) -> str:
+        return self._chip.toolTip().split(" - ")[0]
+
+    def setChecked(self, checked: bool) -> None:  # noqa: N802 - Qt naming
+        self._chip.setChecked(checked)
+        self._repaint()
+
+    def clicked(self):  # noqa: N802 - mirrors QPushButton for the caller
+        return self._chip.clicked
+
+    def _repaint(self) -> None:
+        selected = self._chip.isChecked()
+        border = self._accent["ACCENT_LIGHT"] if selected else theme.BORDER_STRONG
+        width = 3 if selected else 1
+        self._chip.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: {self._accent['PRIMARY']};"
+            f"  border: {width}px solid {border};"
+            f"  border-radius: {theme.RADIUS_SM}px;"
+            f"}}"
+            f"QPushButton:hover {{ border-color: {self._accent['ACCENT_LIGHT']}; }}"
+        )
 
 
 class SettingsPage(QWidget):
@@ -63,9 +132,10 @@ class SettingsPage(QWidget):
         root.addLayout(self._header())
 
         self._tabs = QTabWidget()
+        self._configure_tab_bar()
         for group in GROUPS:
-            self._tabs.addTab(self._build_group(group), group)
-        self._tabs.addTab(self._build_backup_tab(), "Backup & Restore")
+            self._tabs.addTab(self._build_group(group), tab_label(group))
+        self._tabs.addTab(self._build_backup_tab(), TAB_BACKUP)
         root.addWidget(self._tabs, 1)
 
         actions = QHBoxLayout()
@@ -87,6 +157,18 @@ class SettingsPage(QWidget):
         self.refresh()
 
     # -- header --------------------------------------------------------------
+    def _configure_tab_bar(self) -> None:
+        """Keep the tab bar usable on a narrow window.
+
+        Qt elides every tab label when the row overflows rather than scrolling
+        it, so the captions are short (see :data:`TAB_LABELS`) and the arrows
+        are only the fallback when even those do not fit.
+        """
+        bar = self._tabs.tabBar()
+        bar.setUsesScrollButtons(True)
+        bar.setElideMode(Qt.TextElideMode.ElideRight)
+        bar.setToolTip("Settings groups - use the arrows to reach the rest")
+
     def _header(self) -> QHBoxLayout:
         row = QHBoxLayout()
         column = QVBoxLayout()
@@ -116,7 +198,7 @@ class SettingsPage(QWidget):
         preset_choices = spec.choices if len(spec.choices or ()) <= 12 else ()
 
         if spec.type in ("choice", "weekday") or preset_choices:
-            widget = QComboBox()
+            widget = Select()
             widget.setEditable(False)
             choices = preset_choices or spec.choices or ()
             if spec.key == "default_weekly_goal_hours" and not choices:
@@ -176,6 +258,149 @@ class SettingsPage(QWidget):
         note.setObjectName("CardHint")
         return note
 
+    # -- appearance ----------------------------------------------------------
+    def _build_appearance_preview(self) -> QWidget:
+        """Named swatches plus a slice of the real interface.
+
+        Picking a colour repaints the running app straight away, so the choice
+        is made against the actual screens rather than against a word.
+        """
+        card = Card(
+            "Preview",
+            "The accent carries primary actions, the active navigation item and "
+            "live attendance state. Text, tables and borders stay ink on white "
+            "whatever you pick.",
+        )
+
+        swatches = QHBoxLayout()
+        swatches.setSpacing(theme.SPACING_S)
+        self._swatches: dict[str, _AccentSwatch] = {}
+        for name in ACCENT_NAMES:
+            swatch = _AccentSwatch(name, ACCENTS[name])
+            swatch.setFixedWidth(96)
+            swatch.clicked().connect(
+                lambda _=False, chosen=name: self._pick_accent(chosen)
+            )
+            swatches.addWidget(swatch)
+            self._swatches[name] = swatch
+        swatches.addStretch(1)
+        card.add_layout(swatches)
+
+        self._appearance_preview = QWidget(card)
+        self._appearance_preview.setObjectName("PreviewStrip")
+        preview_layout = QHBoxLayout(self._appearance_preview)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(theme.SPACING_S)
+
+        self._preview_rail = QLabel("DASHBOARD")
+        self._preview_rail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_rail.setFixedWidth(104)
+        self._preview_rail.setFixedHeight(76)
+        preview_layout.addWidget(self._preview_rail)
+
+        right = QVBoxLayout()
+        right.setSpacing(theme.SPACING_XS)
+
+        # A label rather than a real button: a disabled button would be painted
+        # with the disabled colours, which is the opposite of a preview.
+        self._preview_button = QLabel("Start attendance kiosk")
+        self._preview_button.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        right.addWidget(self._preview_button)
+
+        row = QHBoxLayout()
+        row.setSpacing(theme.SPACING_XS)
+        self._preview_badge = QLabel("Working")
+        row.addWidget(self._preview_badge)
+        self._preview_row = QLabel("Selected row")
+        row.addWidget(self._preview_row)
+        row.addStretch(1)
+        right.addLayout(row)
+
+        preview_layout.addLayout(right, 1)
+        card.add(self._appearance_preview)
+
+        note = QLabel(
+            "Changing the colour here repaints VardiaShift straight away. "
+            "Press Save changes to keep it."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("CardHint")
+        card.add(note)
+        return card
+
+    def _pick_accent(self, name: str) -> None:
+        """Selecting a swatch drives the drop-down, so one path does the work."""
+        combo = self._editors.get("accent_color")
+        if isinstance(combo, QComboBox):
+            index = combo.findText(name)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+
+    def _pending_accent(self) -> dict[str, str]:
+        """The accent the editors currently describe, before it is saved."""
+        from app.utils.appearance import resolve
+
+        return resolve(
+            str(self._value_of("accent_color") or ""),
+            str(self._value_of("custom_accent") or ""),
+        )
+
+    def _preview_accent(self) -> None:
+        """Repaint the app with the pending accent and refresh the sample."""
+        if not hasattr(self, "_appearance_preview"):
+            return  # the Appearance tab has not been built yet
+        accent = self._pending_accent()
+        changed = accent != theme.current_accent()
+        theme.use_accent(accent)
+
+        chosen = str(self._value_of("accent_color") or DEFAULT_ACCENT)
+        custom = str(self._value_of("custom_accent") or "").strip()
+        for name, swatch in getattr(self, "_swatches", {}).items():
+            swatch.setChecked(name == chosen and not custom)
+
+        self._preview_rail.setStyleSheet(
+            f"background: {accent['BG']}; color: {accent['ACCENT_LIGHT']};"
+            f"font-size: 10px; font-weight: 700; letter-spacing: 2px;"
+        )
+        self._preview_button.setStyleSheet(
+            f"background: {accent['PRIMARY']}; color: {theme.TEXT_ON_DARK};"
+            f"padding: {theme.SPACING_XS}px {theme.SPACING_M}px;"
+            f"font-size: 13px; font-weight: 600;"
+        )
+        self._preview_badge.setStyleSheet(
+            f"color: {accent['PRIMARY']}; background: {theme.alpha(accent['PRIMARY'], '1A')};"
+            f"border: 1px solid {theme.alpha(accent['PRIMARY'], '55')};"
+            f"border-radius: {theme.RADIUS_PILL}px; padding: 2px 9px;"
+            f"font-size: 11px; font-weight: 700;"
+        )
+        self._preview_row.setStyleSheet(
+            f"background: {accent['PRIMARY_SOFT']}; color: {theme.TEXT};"
+            f"padding: 2px 9px; font-size: 11px; font-weight: 600;"
+        )
+
+        app = QApplication.instance()
+        # Re-laying the whole stylesheet out is expensive, and a refresh that
+        # did not change the colour has nothing to repaint.
+        if changed and app is not None:
+            theme.apply_theme(app)
+
+    def _watch_accent_editor(self, key: str, editor: QWidget) -> None:
+        """Repaint as soon as the accent being edited changes.
+
+        A typed hex that is not valid yet would otherwise blank the app, so the
+        custom field only previews once the text actually parses.
+        """
+        from app.utils.appearance import is_valid_color
+
+        if key == "accent_color":
+            editor.currentIndexChanged.connect(self._preview_accent)
+        elif key == "custom_accent":
+            editor.textChanged.connect(
+                lambda text: self._preview_accent()
+                if (not text.strip()) or is_valid_color(text)
+                else None
+            )
+
     def _build_group(self, group: str) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -200,9 +425,13 @@ class SettingsPage(QWidget):
                 hint.setObjectName("CardHint")
                 hint.setWordWrap(True)
                 form.addRow("", hint)
+            if group == GROUP_APPEARANCE:
+                self._watch_accent_editor(spec.key, editor)
 
         card.add_layout(form)
         layout.addWidget(card)
+        if group == GROUP_APPEARANCE:
+            layout.addWidget(self._build_appearance_preview())
         if group == GROUP_PHONE:
             layout.addWidget(self._build_phone_status_card())
         if group == GROUP_SHEETS:
@@ -214,7 +443,7 @@ class SettingsPage(QWidget):
 
     def _build_phone_status_card(self) -> QWidget:
         """Live server controls: status, address, start/stop."""
-        from app.phone.server import lan_ip
+        from app.phone.server import lan_warning
 
         card = Card("Phone service", "")
         self._phone_status = QLabel("")
@@ -250,12 +479,9 @@ class SettingsPage(QWidget):
         hint.setObjectName("CardHint")
         card.add(hint)
 
-        lan = lan_ip()
-        if lan is None:
-            self._phone_lan_warning = QLabel(
-                "No local network connection detected - phones will not be "
-                "able to reach this computer until it joins a network."
-            )
+        warning = lan_warning()
+        if warning:
+            self._phone_lan_warning = QLabel(warning)
             self._phone_lan_warning.setWordWrap(True)
             self._phone_lan_warning.setProperty("role", "warning")
             card.add(self._phone_lan_warning)
@@ -625,6 +851,9 @@ class SettingsPage(QWidget):
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Check your settings", str(exc))
+            # A refused save must not leave the app wearing a colour that was
+            # never stored.
+            self._preview_accent()
             return
         if not changes:
             QMessageBox.information(self, "Nothing to save", "No settings were changed.")
@@ -657,6 +886,11 @@ class SettingsPage(QWidget):
     def refresh(self) -> None:
         self.context.settings.refresh()
         self._rebuild_tabs()
+        # After the rebuild: the preview widgets only exist once the Appearance
+        # tab has been built, and styling them first left them uncoloured.
+        # The editors now show the saved values, so the app goes back to the
+        # saved accent too - discarding or resetting must undo the preview.
+        self._preview_accent()
 
         info = self.context.backups.database_info()
         self._subtitle.setText(
@@ -679,8 +913,8 @@ class SettingsPage(QWidget):
                 widget.deleteLater()
         self._editors.clear()
         for group in GROUPS:
-            self._tabs.addTab(self._build_group(group), group)
-        self._tabs.addTab(self._build_backup_tab(), "Backup & Restore")
+            self._tabs.addTab(self._build_group(group), tab_label(group))
+        self._tabs.addTab(self._build_backup_tab(), TAB_BACKUP)
         if 0 <= current < self._tabs.count():
             self._tabs.setCurrentIndex(current)
 

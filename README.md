@@ -35,6 +35,40 @@ manages itself. There is nothing to install, configure, or host.
 
 ---
 
+## Screenshots
+
+The whole app is one design system: flat surfaces, hard edges, and a single
+accent colour for whatever is live. You choose that accent in Settings.
+
+<table>
+<tr>
+<td width="50%"><b>Dashboard.</b> Who is working now, hours today, and this week against the goal.<br>
+<img src="assets/screenshots/dashboard.png" width="440" alt="Dashboard"></td>
+<td width="50%"><b>Attendance kiosk.</b> Scan your own QR, then TIME IN or TIME OUT.<br>
+<img src="assets/screenshots/kiosk.png" width="440" alt="Attendance kiosk"></td>
+</tr>
+<tr>
+<td width="50%"><b>Employees.</b> Add, edit, deactivate, and print QR codes.<br>
+<img src="assets/screenshots/employees.png" width="440" alt="Employees"></td>
+<td width="50%"><b>Attendance.</b> Today, history, missing time-outs, and the audit log.<br>
+<img src="assets/screenshots/attendance.png" width="440" alt="Attendance"></td>
+</tr>
+<tr>
+<td width="50%"><b>Reports.</b> Daily, weekly and per-employee reports, exported to CSV or XLSX.<br>
+<img src="assets/screenshots/reports.png" width="440" alt="Reports"></td>
+<td width="50%"><b>QR codes.</b> The public TIME IN / OUT codes and the per-employee cards.<br>
+<img src="assets/screenshots/qr-codes.png" width="440" alt="QR codes"></td>
+</tr>
+<tr>
+<td width="50%"><b>Settings &rarr; Appearance.</b> Pick an accent; the app repaints as you choose.<br>
+<img src="assets/screenshots/appearance.png" width="440" alt="Appearance settings"></td>
+<td width="50%"><b>First run.</b> Create the administrator account and pick the organisation type.<br>
+<img src="assets/screenshots/setup.png" width="440" alt="First-run setup"></td>
+</tr>
+</table>
+
+---
+
 ## Download (normal users start here)
 
 You do **not** need Python or any technical setup.
@@ -348,6 +382,13 @@ Details worth knowing:
   *Phone service port* (default `8123`) and make sure the computer's
   firewall allows it on private networks. The status panel shows the exact
   address phones should open.
+* **The page opens on this computer but not on a phone.** Two causes. If a
+  VPN or Tailscale is connected it can own the default route, and the code
+  would encode the tunnel's address - reachable from the PC and no phone.
+  VardiaShift spots that and refuses to print the code, and Settings names the
+  address; disconnect the VPN or join the office network. Otherwise the
+  computer's firewall is blocking incoming connections: allow VardiaShift (or
+  port `8123`) on private networks.
 
 ## Administrator workflow
 
@@ -421,7 +462,7 @@ One-time setup (about five minutes, needs internet once):
    **Spreadsheet ID** (the long part of the sheet URL between `/d/` and
    `/edit`), and save.
 5. On the **Reports** page, generate any report and press **Send to Google
-   Sheets**. Each upload creates a timestamped tab — existing tabs are never
+   Sheets**. Each upload creates a timestamped tab, and existing tabs are never
    overwritten.
 
 The key file is validated before it is stored, lives only in your local data
@@ -525,6 +566,7 @@ VardiaShift/
 │   │                         # kiosk, QR management, reports, settings, admin
 │   └── utils/                # app-data paths, time utils, validation
 ├── tests/                    # pytest suite
+├── scripts/                  # icon builder; shoot_ui.py renders every screen
 ├── installer/windows/        # Inno Setup installer script
 ├── assets/                   # application icon and README screenshots
 ├── data/                     # placeholder (runtime data lives in the OS data dir)

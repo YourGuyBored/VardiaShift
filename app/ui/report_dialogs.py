@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -27,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.services import report_template as tpl
 from app.ui import theme
-from app.ui.widgets import Card
+from app.ui.widgets import Card, Select
 
 EDITOR_HEADERS = ["Use", "Report field", "Heading", "Width", "Number format"]
 FORMAT_LABELS = {"text": "Text, e.g. 8h 12m", "hours": "Number, e.g. 8.20"}
@@ -113,7 +112,7 @@ class TemplateEditorDialog(QDialog):
             width.setMaximumWidth(90)
             self._table.setCellWidget(row, 3, width)
 
-            number = QComboBox()
+            number = Select()
             for key_value, label in FORMAT_LABELS.items():
                 number.addItem(label, key_value)
             number.setCurrentIndex(max(0, number.findData(column.number_format)))
