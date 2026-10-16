@@ -36,7 +36,9 @@ from app.ui.widgets import (
     Select,
     StatusBadge,
     badge_cell,
+    badge_column_width,
     clear_table_widgets,
+    elide_headers,
 )
 
 HISTORY_COLUMNS = ["Date", "Time In", "Time Out", "Hours", "Status"]
@@ -455,7 +457,17 @@ class AttendancePage(QWidget):
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setAlternatingRowColors(True)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header = table.horizontalHeader()
+        elide_headers(table)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        if "Status" in columns:
+            # Status carries a pill, which a stretched column can squeeze below
+            # its own label. Give it the width its longest pill needs instead.
+            status = columns.index("Status")
+            header.setSectionResizeMode(status, QHeaderView.ResizeMode.Fixed)
+            table.setColumnWidth(
+                status, badge_column_width(StatusBadge(ATTENDANCE_MISSING))
+            )
         return table
 
     # -- filters -------------------------------------------------------------

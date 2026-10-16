@@ -30,11 +30,6 @@ def status_color(status: str) -> str:
     return theme.status_color(status)
 
 
-#: Left inset of a pill inside a table cell, matching the header padding so
-#: the pill sits under the column it belongs to.
-CELL_INSET = 12
-
-
 def badge_cell(badge: QWidget) -> QWidget:
     """A table-cell host that places one pill consistently.
 
@@ -42,10 +37,15 @@ def badge_cell(badge: QWidget) -> QWidget:
     against their column headers, and QTableWidget will happily hand the host
     less height than the pill needs and clip it. Pinning the height here and
     below the table's row height keeps every pill whole.
+
+    No side margins: the view already lays a cell widget inside the item's
+    padding box, so the pill lines up under the column's text on its own. An
+    inset here padded the pill twice and left it narrower than its own label,
+    which shaved characters off both ends.
     """
     holder = QWidget()
     layout = QHBoxLayout(holder)
-    layout.setContentsMargins(CELL_INSET, 0, theme.SPACING_XS, 0)
+    layout.setContentsMargins(0, 0, 0, 0)
     layout.addWidget(
         badge, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
     )
@@ -53,6 +53,17 @@ def badge_cell(badge: QWidget) -> QWidget:
     holder.setFixedHeight(max(badge.sizeHint().height(), badge.minimumHeight()) + 4)
     holder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     return holder
+
+
+def badge_column_width(badge: QWidget) -> int:
+    """The column width a pill needs so it is never squeezed.
+
+    The view lays a cell widget inside the item's padding box - the stylesheet
+    pads every cell by ``SPACING_XS SPACING_S`` - so the column has to carry
+    that padding on both sides of the pill itself. Sizing from a real pill also
+    keeps the column still instead of shifting as the data changes.
+    """
+    return badge.sizeHint().width() + 2 * theme.SPACING_S
 
 
 class Card(QFrame):
@@ -99,9 +110,16 @@ class StatTile(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("Card")
-        self.setMinimumWidth(150)
+        # No fixed floor. Seven of these share one row, and a 150px floor made
+        # that row 1174px wide - wider than the window can ever be - so Qt drew
+        # the last tiles straight over their neighbours at the minimum size.
+        # The caption wraps and the values are short, so their own content sets
+        # a small enough minimum for the row to fit; the side padding is kept
+        # tight for the same reason.
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(theme.SPACING_M, theme.SPACING_S, theme.SPACING_M, theme.SPACING_S)
+        layout.setContentsMargins(
+            theme.SPACING_S, theme.SPACING_S, theme.SPACING_S, theme.SPACING_S
+        )
         layout.setSpacing(theme.SPACING_2XS)
 
         self._value = QLabel(value)
@@ -142,6 +160,16 @@ def badge_stylesheet(color: str) -> str:
         f"border-radius: {theme.RADIUS_PILL}px; padding: 2px 9px;"
         f"font-size: 11px; font-weight: 700;"
     )
+
+
+def elide_headers(table) -> None:
+    """Let a header ellipsize when its column is squeezed.
+
+    Qt draws a header label that does not fit clipped on both sides, so
+    "Employee" reads as "nployee" once a table is narrow. An ellipsis keeps
+    the label legible instead.
+    """
+    table.horizontalHeader().setTextElideMode(Qt.TextElideMode.ElideRight)
 
 
 def clear_table_widgets(table) -> None:
@@ -419,7 +447,12 @@ class BarChart(QWidget):
 
     #: Reserved at the bottom for day names. Nothing else may be drawn here.
     LABEL_BAND = 22
-    MINIMUM_HEIGHT = 140
+    #: The height the chart takes whenever there is room.
+    PREFERRED_HEIGHT = 140
+    #: The least it may be squeezed to. At the window's minimum size the card
+    #: has less height than it would like, and with nowhere to go the legend
+    #: was drawn straight over the day labels.
+    MINIMUM_HEIGHT = 116
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -501,7 +534,7 @@ class BarChart(QWidget):
                 )
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt naming
-        return QSize(360, self.MINIMUM_HEIGHT)
+        return QSize(360, self.PREFERRED_HEIGHT)
 
 
 class ClickableLabel(QLabel):
@@ -528,6 +561,10 @@ __all__ = [
     "StatTile",
     "StatusBadge",
     "SuccessButton",
+    "badge_cell",
+    "badge_column_width",
     "badge_stylesheet",
+    "clear_table_widgets",
+    "elide_headers",
     "status_color",
 ]

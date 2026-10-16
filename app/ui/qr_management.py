@@ -30,7 +30,14 @@ from PySide6.QtWidgets import (
 from app.constants import QR_EMPLOYEE, QR_TIME_IN, QR_TIME_OUT
 from app.phone.server import PhoneAddressError
 from app.ui import theme
-from app.ui.widgets import Card, EmptyState, PrimaryButton, Select, clear_table_widgets
+from app.ui.widgets import (
+    Card,
+    EmptyState,
+    PrimaryButton,
+    Select,
+    clear_table_widgets,
+    elide_headers,
+)
 
 EMPLOYEE_COLUMNS = ["Employee ID", "Full Name", "Department", "Status", "Date Added"]
 
@@ -367,6 +374,7 @@ class QRManagementPage(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
+        elide_headers(self._table)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.itemDoubleClicked.connect(lambda _: self._preview_employee())
         card.add(self._table, 1)

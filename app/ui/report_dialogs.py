@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.services import report_template as tpl
 from app.ui import theme
-from app.ui.widgets import Card, Select
+from app.ui.widgets import Card, Select, elide_headers
 
 EDITOR_HEADERS = ["Use", "Report field", "Heading", "Width", "Number format"]
 FORMAT_LABELS = {"text": "Text, e.g. 8h 12m", "hours": "Number, e.g. 8.20"}
@@ -63,6 +63,7 @@ class TemplateEditorDialog(QDialog):
         self._table.setHorizontalHeaderLabels(EDITOR_HEADERS)
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        elide_headers(self._table)
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
@@ -233,6 +234,7 @@ class ImportPreviewDialog(QDialog):
         table.setHorizontalHeaderLabels(["Line", "Employee", "Detail"])
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        elide_headers(table)
         table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         for index, (line, employee, detail) in enumerate(rows):
             table.setItem(index, 0, QTableWidgetItem(str(line)))

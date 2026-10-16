@@ -1144,17 +1144,20 @@ def test_status_badge_uses_tinted_background_not_tinted_blue(context, qt_app):
 
 def test_refreshing_tables_leaves_no_ghost_widgets(context, qt_app, team):
     """Repopulating a badge table must remove replaced cell widgets."""
+    from app.ui.admin_account import AdminAccountPage
     from app.ui.dashboard import DashboardPage
     from app.ui.employee_management import EmployeePage
 
     dashboard = DashboardPage(context)
     employees = EmployeePage(context)
+    admin = AdminAccountPage(context)
 
     for _ in range(3):
         dashboard.refresh()
         employees.refresh()
+        admin.refresh()
 
-    for table in (dashboard._table, employees._table):
+    for table in (dashboard._table, employees._table, admin._table):
         holders = [
             table.cellWidget(row, column)
             for row in range(table.rowCount())
@@ -1186,6 +1189,67 @@ def test_stat_tile_caption_wraps_instead_of_clipping(context, qt_app):
     tile = StatTile("Currently Working", "12")
     assert tile._value.text() == "12"
     assert tile.value_text() == "12"
+
+
+def test_dashboard_stat_tiles_do_not_overlap_at_the_window_minimum(
+    context, qt_app, team
+):
+    """Seven 150px tiles wanted 1174px. At the window's minimum size the later
+    tiles were drawn over their neighbours and the last one was clipped."""
+    from app.ui.dashboard import DashboardPage
+
+    page = DashboardPage(context)
+    # What the main window's minimum size leaves the page after the rail.
+    page.resize(944, 698)
+    page.show()
+    for _ in range(4):
+        qt_app.processEvents()
+
+    tiles = [
+        page._stat_employees,
+        page._stat_working,
+        page._stat_out,
+        page._stat_missing,
+        page._stat_today,
+        page._stat_week,
+        page._stat_goal,
+    ]
+    for tile in tiles:
+        assert tile.width() >= tile.minimumSizeHint().width()
+    for left, right in zip(tiles, tiles[1:]):
+        assert left.geometry().right() < right.geometry().x(), (
+            f"a {left.width()}px tile runs into the next one"
+        )
+    page.deleteLater()
+
+
+def test_status_columns_fit_their_widest_pill(context, qt_app, team):
+    """A pill squeezed below its label lost characters off both ends, so
+    "Missing Time Out" read as "lissing Time Ou"."""
+    from PySide6.QtWidgets import QHeaderView
+
+    from app.ui.attendance_view import AttendancePage
+    from app.ui.dashboard import DashboardPage
+    from app.ui.widgets import StatusBadge, badge_column_width
+
+    widest = StatusBadge("missing")
+    needed = badge_column_width(widest)
+    # The column carries the cell's own padding either side of the pill.
+    assert needed > widest.sizeHint().width()
+
+    dashboard = DashboardPage(context)
+    assert dashboard._table.columnWidth(3) >= needed
+
+    attendance = AttendancePage(context)
+    for table, column in (
+        (attendance._today_table, 5),
+        (attendance._history_table, 4),
+        (attendance._open_table, 4),
+    ):
+        assert table.columnWidth(column) >= needed
+        # A stretched column would squeeze the pill again, so it is pinned.
+        mode = table.horizontalHeader().sectionResizeMode(column)
+        assert mode == QHeaderView.ResizeMode.Fixed
 
 
 # -- kiosk exit gate ---------------------------------------------------------

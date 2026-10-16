@@ -47,8 +47,13 @@ def _text_pixels_in_bottom_strip(image: QImage) -> int:
 
 def test_chart_is_tall_enough_for_bars_and_labels(qt_app):
     chart = BarChart()
-    assert chart.minimumHeight() >= 140
-    assert chart.sizeHint().height() == chart.minimumHeight()
+    # It takes its preferred height whenever there is room.
+    assert chart.sizeHint().height() == BarChart.PREFERRED_HEIGHT
+    # On the dashboard's smallest window it is squeezed below that, and has to
+    # stay tall enough for the label band plus a plot area worth reading.
+    assert chart.minimumHeight() == BarChart.MINIMUM_HEIGHT
+    assert BarChart.MINIMUM_HEIGHT < BarChart.PREFERRED_HEIGHT
+    assert BarChart.MINIMUM_HEIGHT >= BarChart.LABEL_BAND + 64
     chart.deleteLater()
 
 

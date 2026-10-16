@@ -26,11 +26,13 @@ from app.ui.widgets import (
     EmptyState,
     PrimaryButton,
     badge_cell,
+    badge_column_width,
     Select,
     ProgressBarRow,
     StatTile,
     StatusBadge,
     clear_table_widgets,
+    elide_headers,
 )
 
 COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Today", "This Week", "Goal", "Source"]
@@ -168,6 +170,7 @@ class DashboardPage(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         header = self._table.horizontalHeader()
+        elide_headers(self._table)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         # Ten equal columns left the status pill too narrow to read, which
         # sliced the label. Fixed columns for everything but the name, so the
@@ -179,7 +182,12 @@ class DashboardPage(QWidget):
         header.setSectionResizeMode(
             COLUMNS.index("Status"), QHeaderView.ResizeMode.Fixed
         )
-        self._table.setColumnWidth(COLUMNS.index("Status"), 132)
+        # Sized to the longest status pill, so the column neither shifts nor
+        # clips as the day's attendance changes.
+        self._table.setColumnWidth(
+            COLUMNS.index("Status"),
+            badge_column_width(StatusBadge(ATTENDANCE_MISSING)),
+        )
         self._table.setSortingEnabled(False)
         card.add(self._table, 1)
 

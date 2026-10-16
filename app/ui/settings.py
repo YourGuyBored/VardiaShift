@@ -47,7 +47,7 @@ from app.models.settings import (
 )
 from app.services.backup_service import BackupError
 from app.ui import theme
-from app.ui.widgets import Card, GhostButton, PrimaryButton, Select
+from app.ui.widgets import Card, GhostButton, PrimaryButton, Select, elide_headers
 from app.utils.appearance import ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT
 
 BACKUP_COLUMNS = ["File", "Created", "Size"]
@@ -823,6 +823,7 @@ class SettingsPage(QWidget):
         self._backup_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._backup_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._backup_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        elide_headers(self._backup_table)
         self._backup_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )

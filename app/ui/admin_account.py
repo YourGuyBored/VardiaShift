@@ -21,7 +21,14 @@ from PySide6.QtWidgets import (
 
 from app.services.authentication_service import AuthenticationError
 from app.ui import theme
-from app.ui.widgets import ActiveBadge, Card, PrimaryButton, badge_cell
+from app.ui.widgets import (
+    ActiveBadge,
+    Card,
+    PrimaryButton,
+    badge_cell,
+    clear_table_widgets,
+    elide_headers,
+)
 from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password
 
@@ -194,6 +201,7 @@ class AdminAccountPage(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
+        elide_headers(self._table)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         admins.add(self._table, 1)
         root.addWidget(admins, 1)
@@ -280,6 +288,11 @@ class AdminAccountPage(QWidget):
         )
 
         admins = self.context.authentication.list_admins()
+        # ``refresh`` runs again every time the page is shown, and
+        # ``setCellWidget`` does not delete the widget it replaces. Without
+        # this, a second pass leaves the first status pill painted on top of
+        # the new one.
+        clear_table_widgets(self._table)
         self._table.setRowCount(len(admins))
         for index, record in enumerate(admins):
             values = [

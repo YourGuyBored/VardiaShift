@@ -32,7 +32,7 @@ from app.services.report_import import (
 from app.services.report_service import XLSX_AVAILABLE
 from app.ui import theme
 from app.ui.report_dialogs import ImportPreviewDialog, TemplateEditorDialog, pick_spreadsheet
-from app.ui.widgets import Card, EmptyState, PrimaryButton, Select
+from app.ui.widgets import Card, EmptyState, PrimaryButton, Select, elide_headers
 
 TYPES = [
     ("Daily report", "daily"),
@@ -147,6 +147,7 @@ class ReportsPage(QWidget):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
+        elide_headers(self._table)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         card.add(self._table, 1)
 

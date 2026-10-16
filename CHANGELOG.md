@@ -28,11 +28,23 @@ All notable changes to VardiaShift are documented here. The format follows
 * Panels that had drifted onto an 8-12px corner radius - the QR preview, the QR
   step list and the report summary strip - now use the same hard edges as every
   other surface. Files: `app/ui/qr_management.py`, `app/ui/reports.py`.
+* A status column is now sized to the widest pill it can show rather than to a
+  fixed guess. The column also stays put as the day's attendance changes, so it
+  no longer shifts under the reader. Files: `app/ui/widgets.py`,
+  `app/ui/dashboard.py`, `app/ui/attendance_view.py`,
+  `app/ui/employee_management.py`.
+* Table headers ellipsize when a table is narrow ("Empl...") instead of being
+  sliced mid-word ("nployee"), which is what Qt does until it is told to elide.
+  Files: `app/ui/widgets.py`, `app/ui/admin_account.py`,
+  `app/ui/attendance_view.py`, `app/ui/dashboard.py`,
+  `app/ui/employee_management.py`, `app/ui/qr_management.py`,
+  `app/ui/report_dialogs.py`, `app/ui/reports.py`, `app/ui/settings.py`.
 * Screenshots in the README were re-rendered, and the new Settings -> Phone
-  screen joined the gallery. The README now names three Settings tabs the way
-  the tab bar labels them - Kiosk, Phone and Sheets - instead of by their longer
-  internal group names. Files: `assets/screenshots/`, `scripts/shoot_ui.py`,
-  `README.md`.
+  screen joined the gallery. The dashboard, Employees and Attendance shots were
+  refreshed to show the status pills reading in full. The README now names three
+  Settings tabs the way the tab bar labels them - Kiosk, Phone and Sheets -
+  instead of by their longer internal group names. Files:
+  `assets/screenshots/`, `scripts/shoot_ui.py`, `README.md`.
 
 ### Fixed
 
@@ -63,6 +75,25 @@ All notable changes to VardiaShift are documented here. The format follows
   Windows runner while passing on Linux. The icon is now compared by layout and
   pixels, and the execute bit is read from the git index off POSIX. Test-only;
   the application is unchanged. Files: `tests/test_desktop_integration.py`.
+* **The dashboard's seven status tiles overlapped at the window's minimum size,
+  and the last one was cut off at the edge.** Every tile asked for a 150px
+  minimum, so the row wanted 1174px in a window that can only offer it 892. A
+  tile now takes the width its own content needs, and the row fits at every
+  window size. Files: `app/ui/widgets.py`.
+* **The "Missing Time Out" pill lost characters off both ends, reading as
+  "lissing Time Ou" on the dashboard and Attendance.** A cell widget is laid out
+  inside the cell's own padding, and the pill was inset a second time on top of
+  that, which left it narrower than the label it had to show. Files:
+  `app/ui/widgets.py`, `app/ui/dashboard.py`, `app/ui/attendance_view.py`,
+  `app/ui/employee_management.py`.
+* **The Administrator accounts table showed two "Active" pills on the same
+  row.** The page repopulates each time it is shown, and `setCellWidget` does
+  not delete the widget it replaces, so the earlier pill stayed on screen
+  underneath the new one. Files: `app/ui/admin_account.py`.
+* At the window's minimum size the dashboard's weekly chart and the summary
+  line under it were drawn on top of each other. The chart can now give up some
+  height before that happens. Files: `app/ui/widgets.py`,
+  `tests/test_dashboard_chart.py`.
 
 ## [1.3.0] - 2026-10-16
 

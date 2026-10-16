@@ -40,7 +40,9 @@ from app.ui.widgets import (
     PrimaryButton,
     Select,
     badge_cell,
+    badge_column_width,
     clear_table_widgets,
+    elide_headers,
 )
 from app.utils.validation import ValidationError, validate_employee_payload
 
@@ -309,6 +311,7 @@ class EmployeePage(QWidget):
         # Only the name takes the slack. Equal columns squeezed dates, goals and
         # status until every one of them was cut off mid-word.
         header = self._table.horizontalHeader()
+        elide_headers(self._table)
         header.setSectionResizeMode(
             COLUMNS.index("Full Name"), QHeaderView.ResizeMode.Stretch
         )
@@ -321,7 +324,9 @@ class EmployeePage(QWidget):
         header.setSectionResizeMode(
             COLUMNS.index("Status"), QHeaderView.ResizeMode.Fixed
         )
-        self._table.setColumnWidth(COLUMNS.index("Status"), 96)
+        self._table.setColumnWidth(
+            COLUMNS.index("Status"), badge_column_width(ActiveBadge(False))
+        )
         header.setStretchLastSection(False)
         self._table.itemDoubleClicked.connect(lambda _: self._edit())
         card.add(self._table, 1)
