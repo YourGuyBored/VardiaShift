@@ -27,6 +27,11 @@ a = Analysis(  # noqa: F821 - provided by PyInstaller
     ],
     hiddenimports=[
         "PySide6.QtPrintSupport",
+        # The webcam scanner imports cv2 lazily, inside the kiosk, so
+        # PyInstaller's static analysis cannot see it. Without this the
+        # packaged app would have no camera support at all.
+        "cv2",
+        "numpy",
     ],
     hookspath=[],
     hooksconfig={},
@@ -35,7 +40,9 @@ a = Analysis(  # noqa: F821 - provided by PyInstaller
         "tkinter",
         "matplotlib",
         "scipy",
-        "numpy",
+        # numpy is NOT excluded: OpenCV cannot import without it, and the
+        # webcam scanner needs OpenCV. Excluding it silently disabled the
+        # camera in every packaged build.
         "pandas",
         "IPython",
         "notebook",

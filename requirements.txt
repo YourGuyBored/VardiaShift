@@ -7,6 +7,11 @@ PySide6>=6.6
 qrcode[pil]>=7.4
 Pillow>=10.0
 openpyxl>=3.1
+# Webcam QR scanning in the attendance kiosk. Deliberately the headless wheel:
+# VardiaShift only decodes frames, never opens an OpenCV window, and the
+# headless build drops the GUI libraries - with the normal wheel the packaged
+# Linux app would need libGL on the user's machine to import cv2 at all.
+opencv-python-headless>=4.8
 # Windows ships no IANA time-zone database, so zoneinfo needs this package
 # there. It is a no-op everywhere else.
 tzdata; platform_system == "Windows"

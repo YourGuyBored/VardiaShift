@@ -212,6 +212,10 @@ def main() -> int:
     kiosk = KioskWindow(context)
     kiosk.show_kiosk()
     settle()
+    # The kiosk looks for cameras in the background; wait for it so the shot
+    # shows the picker the way an administrator finds it.
+    kiosk.wait_for_camera_list()
+    settle()
     kiosk.grab().save(str(OUT / "13-kiosk.png"))
     print("wrote", OUT / "13-kiosk.png")
 

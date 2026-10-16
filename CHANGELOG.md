@@ -22,6 +22,11 @@ All notable changes to VardiaShift are documented here. The format follows
 
 * Version bumped to `1.4.0` in `APP_VERSION`, `pyproject.toml` and the installer
   default, so the tag, the footer the app draws and the installer all agree.
+* The download is about 85 MB heavier once installed: OpenCV and numpy are part
+  of the app now rather than an optional extra, and that is what makes webcam
+  scanning work out of the box. The headless OpenCV wheel is the smallest form
+  of it and needs no libGL on Linux. Files: `requirements.txt`,
+  `VardiaShift.spec`, `pyproject.toml`.
 * Settings form fields no longer stretch across the whole window - a two-line
   text box was 900px wide on a 1360px window. They stop at a readable width and
   stay left-aligned under their labels. Files: `app/ui/settings.py`.
@@ -41,13 +46,42 @@ All notable changes to VardiaShift are documented here. The format follows
   `app/ui/report_dialogs.py`, `app/ui/reports.py`, `app/ui/settings.py`.
 * Screenshots in the README were re-rendered, and the new Settings -> Phone
   screen joined the gallery. The dashboard, Employees and Attendance shots were
-  refreshed to show the status pills reading in full. The README now names three
-  Settings tabs the way the tab bar labels them - Kiosk, Phone and Sheets -
-  instead of by their longer internal group names. Files:
+  refreshed to show the status pills reading in full. The kiosk shot now shows
+  the camera controls working rather than "Camera unavailable" - the bug the
+  old shot had been quietly documenting. The README now names three Settings
+  tabs the way the tab bar labels them - Kiosk, Phone and Sheets - instead of
+  by their longer internal group names. Files:
   `assets/screenshots/`, `scripts/shoot_ui.py`, `README.md`.
 
 ### Fixed
 
+* **Webcam scanning never worked in a packaged build, which is why the kiosk
+  offered no camera at all.** `opencv-python` was declared an optional extra,
+  so `pip install -r requirements.txt` never installed it and PyInstaller had
+  nothing to bundle - and the build spec excluded `numpy` as well, which
+  OpenCV cannot import without, so bundling OpenCV alone would not have been
+  enough either. OpenCV is now an ordinary dependency (the headless wheel,
+  which needs no libGL on Linux) and the spec keeps numpy. Files:
+  `requirements.txt`, `VardiaShift.spec`, `pyproject.toml`,
+  `requirements-optional.txt` (removed).
+* **The scanner offered cameras that were not there.** `_open_capture()`
+  documented that "a frame read is the only honest test" and then only asked
+  `isOpened()`, which some backends report for an index with nothing behind
+  it. Auto-detect could pick one of those, announce "Camera 0 started", and
+  die a second later with "the camera stopped sending frames". A probe now
+  waits for a real frame and hands the device back if none arrives, bounded by
+  `PROBE_TIMEOUT_MS` - a constant that was defined and never used. Files:
+  `app/qr/scanner.py`.
+* **The kiosk window would not appear until the camera search had finished.**
+  Probing opens every candidate device, and a real webcam takes the better
+  part of a second to answer, so the window was held back by a second or more -
+  worse the more cameras were plugged in. The search runs in the background
+  now and fills the picker when it lands; closing the kiosk waits for it to
+  stop. Files: `app/ui/attendance_kiosk.py`, `tests/test_camera.py`.
+* **"Start camera" appeared to do nothing for almost two seconds.** Opening a
+  device and waiting for its first frame takes that long (measured: 1.79s),
+  and the button kept its old label until the camera answered. The click shows
+  a wait cursor now. Files: `app/ui/attendance_kiosk.py`.
 * **Two Settings tabs, and the QR Codes page, were taller than the window, and
   Qt answered by drawing the lower rows on top of the ones above them.** Every
   Settings tab and every QR Codes tab now scrolls, the way the first-run window

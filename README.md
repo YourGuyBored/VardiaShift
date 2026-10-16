@@ -326,9 +326,11 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 
 ### Scanning hardware
 
-* **Webcam** - the kiosk decodes the camera feed directly (needs the optional
-  `opencv-python` package in a from-source install; release builds document
-  whether it is included).
+* **Webcam** - the kiosk decodes the camera feed directly. Webcam scanning
+  ships in the downloads, so there is nothing to install: press **Start
+  camera**, or choose a specific device from the list when more than one is
+  plugged in. The kiosk looks for cameras in the background, so it opens
+  immediately whether or not one is connected.
 * **USB QR reader** - any keyboard-style scanner just works: scan, press
   Enter, done. No drivers or configuration.
 * **Manual entry** - an employee ID can be typed when a scanner is unavailable
@@ -503,11 +505,9 @@ pip install -r requirements-dev.txt
 python run.py
 ```
 
-Optional extras:
-
-```bash
-pip install -r requirements-optional.txt   # webcam scanning (Google Sheets ships built-in)
-```
+Everything the app uses is an ordinary dependency, webcam scanning and Google
+Sheets export included, so a from-source install behaves exactly like the
+downloads.
 
 Run the test suite:
 

@@ -3,7 +3,9 @@
 Three interchangeable input methods feed the same ``scanned`` signal:
 
 1. **Webcam** - OpenCV captures frames and ``QRCodeDetector`` decodes them.
-   Available only when the optional ``opencv-python`` package is installed.
+   OpenCV ships with the app, so this works out of the box; the import is
+   still guarded so a trimmed install says so plainly instead of failing to
+   start.
 2. **USB scanner** - Most USB QR readers act as a keyboard and "type" the
    payload followed by Enter.  A Qt event filter captures that burst without
    stealing normal typing, so the kiosk works with no extra hardware config.
@@ -16,6 +18,7 @@ lets the attendance service decide what it means.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
@@ -46,7 +49,15 @@ INTERVAL_MS = 120
 #: previously unplugged device or a busy handle all shift the numbering, so
 #: the scanner probes this many indices before giving up.
 MAX_CAMERA_INDEX = 6
-PROBE_TIMEOUT_MS = 400
+
+#: How long one device gets to produce its first frame before it is treated as
+#: absent. Opening a real webcam takes the better part of a second, so this is
+#: a ceiling for a camera that is slow to wake - not a delay paid for a device
+#: that is simply not there, which fails the ``isOpened`` check at once.
+PROBE_TIMEOUT_MS = 3000
+
+#: Gap between frame attempts while waiting for a device to warm up.
+FRAME_POLL_S = 0.05
 
 
 @dataclass
@@ -78,51 +89,102 @@ def capability(manual_allowed: bool = True) -> ScanCapability:
     )
 
 
-def _open_capture(index: int):
-    """Open one capture handle and hand it back only if it really opened.
+def _release(capture) -> None:
+    try:
+        capture.release()
+    except Exception:  # pragma: no cover - defensive
+        pass
 
-    OpenCV reports success for an index that has no device behind it on some
-    backends, so a frame read is the only honest test.
+
+def _make_capture(index: int):
+    """Construct a capture handle for one index.
+
+    Deliberately one argument only. OpenCV exposes
+    ``CAP_PROP_OPEN_TIMEOUT_MSEC`` and it looks like the obvious way to bound a
+    slow device, but passing it to ``VideoCapture()`` makes the V4L2/FFMPEG
+    path reject the open outright - measured on 5.0.0, a perfectly present
+    camera reports "not opened" and the app answers "No camera found". The
+    frame wait in ``_wait_for_frame`` is what bounds a slow device instead.
     """
     if not OPENCV_AVAILABLE:
         return None
     try:
-        capture = cv2.VideoCapture(index)
+        return cv2.VideoCapture(index)
     except Exception:  # pragma: no cover - depends on the OpenCV build
         return None
-    try:
-        if not capture.isOpened():
-            capture.release()
-            return None
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        return capture
-    except Exception:  # pragma: no cover - defensive
+
+
+def _wait_for_frame(capture, timeout_ms: int) -> bool:
+    """Read until one frame arrives, or the device runs out of time."""
+    for prop, value in (
+        (cv2.CAP_PROP_FRAME_WIDTH, 640),
+        (cv2.CAP_PROP_FRAME_HEIGHT, 480),
+    ):
         try:
-            capture.release()
-        except Exception:
+            capture.set(prop, value)
+        except Exception:  # pragma: no cover - defensive
             pass
+
+    deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
+    while True:
+        try:
+            ok, frame = capture.read()
+        except Exception:
+            ok, frame = False, None
+        if ok and frame is not None:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(FRAME_POLL_S)
+
+
+def _open_capture(index: int, timeout_ms: int = PROBE_TIMEOUT_MS):
+    """Open one capture handle, and hand it back only once it has sent a frame.
+
+    OpenCV reports success for an index with nothing behind it on some
+    backends, and a handle that opens but never delivers a frame is useless:
+    the kiosk would offer that device, try to start it, and die a second later
+    with "the camera stopped sending frames". A frame read is the only honest
+    test, so this waits for one up to ``timeout_ms`` and gives the handle back
+    if none arrives.
+    """
+    capture = _make_capture(index)
+    if capture is None:
         return None
+    try:
+        opened = bool(capture.isOpened())
+    except Exception:  # pragma: no cover - depends on the OpenCV build
+        opened = False
+    if opened and _wait_for_frame(capture, timeout_ms):
+        return capture
+    _release(capture)
+    return None
 
 
-def list_cameras(max_index: int = MAX_CAMERA_INDEX) -> list[int]:
-    """Every video index that currently answers.
+def list_cameras(
+    max_index: int = MAX_CAMERA_INDEX,
+    timeout_ms: int = PROBE_TIMEOUT_MS,
+    should_stop=None,
+) -> list[int]:
+    """Every video index that currently answers with a frame.
 
     Used to fill the kiosk's camera picker, so the admin can choose the webcam
-    instead of hoping the app guessed it.
+    instead of hoping the app guessed it. Probing opens each candidate device,
+    so this takes a second or more per connected camera - callers on the GUI
+    thread should run it in the background.
+
+    ``should_stop`` is polled between devices, so a window that is closing can
+    cut a long probe short instead of waiting it out.
     """
     found: list[int] = []
     for index in range(max(0, int(max_index))):
-        capture = _open_capture(index)
+        if should_stop is not None and should_stop():
+            break
+        capture = _open_capture(index, timeout_ms)
         if capture is None:
             continue
-        try:
-            found.append(index)
-        finally:
-            try:
-                capture.release()
-            except Exception:  # pragma: no cover
-                pass
+        _release(capture)
+        found.append(index)
     return found
 
 
@@ -270,8 +332,6 @@ class KeyboardWedgeFilter(QObject):
 
     def handle_key(self, text: str, has_event: bool) -> bool:
         """Feed one key press.  Returns ``True`` when it was consumed."""
-        import time
-
         now = time.monotonic()
         if now - self._last_key_at > 0.35:
             self._buffer.clear()
@@ -400,8 +460,6 @@ class ScannerWidget(QWidget):
     # -- public entry points -------------------------------------------------
     def emit_scanned(self, payload: str) -> None:
         """Emit a payload, honouring a short de-duplication cooldown."""
-        import time
-
         text = (payload or "").strip()
         if not text:
             return

@@ -12,9 +12,10 @@ be picked from a list instead (disabled in Settings > Attendance).
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QThread, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -86,6 +87,42 @@ def _prompt_style(state: str) -> str:
     )
 
 
+class _CameraProbe(QThread):
+    """Finds connected cameras without holding the kiosk window back.
+
+    Probing opens every candidate device, and a real webcam takes the better
+    part of a second to answer - so doing it while the window was being built
+    delayed the kiosk appearing, and the more cameras were plugged in the worse
+    it got. The picker fills in when this finishes instead.
+
+    It can also be told to stop, so closing the kiosk never waits out a slow
+    device list.
+    """
+
+    found = Signal(list)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Ask the probe to stop after the device it is on."""
+        self._cancelled = True
+
+    def _cancelled_flag(self) -> bool:
+        return self._cancelled
+
+    def run(self) -> None:
+        from app.qr.scanner import list_cameras
+
+        try:
+            indices = list_cameras(should_stop=self._cancelled_flag)
+        except Exception:  # pragma: no cover - depends on the OpenCV build
+            indices = []
+        if not self._cancelled:
+            self.found.emit([int(index) for index in indices])
+
+
 class KioskWindow(QMainWindow):
     """Full-screen employee scanning screen."""
 
@@ -105,6 +142,9 @@ class KioskWindow(QMainWindow):
         # Leaving the kiosk always passes the password gate; only a forced
         # close (application shutdown) bypasses it.
         self._exit_allowed = False
+        # The camera search runs in the background; nothing may outlive the
+        # window, so the handle is kept to join it on close.
+        self._camera_probe: _CameraProbe | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -300,7 +340,7 @@ class KioskWindow(QMainWindow):
 
     # -- scanner -------------------------------------------------------------
     def _install_scanner(self) -> None:
-        from app.qr.scanner import OPENCV_AVAILABLE, KeyboardWedgeFilter, list_cameras
+        from app.qr.scanner import OPENCV_AVAILABLE, KeyboardWedgeFilter
 
         self._wedge = KeyboardWedgeFilter(self.handle_scan)
         self._camera_combo.addItem("Auto-detect", None)
@@ -309,7 +349,8 @@ class KioskWindow(QMainWindow):
             self._camera_button.setEnabled(False)
             self._camera_button.setText("Camera unavailable")
             self._camera_button.setToolTip(
-                "Install the optional 'opencv-python' package to enable webcam scanning."
+                "This build has no webcam support. A USB QR reader works "
+                "normally, or use manual entry."
             )
             self._camera_combo.setEnabled(False)
             self._camera_hint.setText(
@@ -323,11 +364,71 @@ class KioskWindow(QMainWindow):
             self._camera = CameraScanner(self)
             self._camera.decoded.connect(self.handle_scan)
             self._camera.camera_error.connect(self._on_camera_error)
-            self._populate_cameras(list_cameras())
+            # The kiosk opens now; the list of cameras arrives when the
+            # background probe finishes.
             self._camera_hint.setText("Start the camera to scan with a webcam.")
+            self._start_camera_probe()
 
         manual_allowed = self.context.settings.settings.allow_manual_clock
         self._fallback_button.setVisible(manual_allowed)
+
+    def _start_camera_probe(self) -> None:
+        probe = _CameraProbe(self)
+        probe.found.connect(self._on_cameras_found)
+        probe.finished.connect(self._on_camera_probe_finished)
+        self._camera_probe = probe
+        probe.start()
+
+    def _on_cameras_found(self, indices: list[int]) -> None:
+        if self._exit_allowed:
+            return
+        self._populate_cameras(indices)
+
+    def _on_camera_probe_finished(self) -> None:
+        probe = self._camera_probe
+        self._camera_probe = None
+        if probe is not None:
+            probe.deleteLater()
+
+    def wait_for_camera_list(self, timeout_ms: int = 15000) -> None:
+        """Wait for the background camera search, without stopping it.
+
+        The screenshot tool and the tests use this to see the picker as an
+        administrator finds it. Closing the kiosk cancels the search instead -
+        see ``_join_camera_probe``.
+        """
+        probe = self._camera_probe
+        if probe is None:
+            return
+        try:
+            # Deliberately not gated on isRunning(): a thread that has been
+            # started but has not begun executing yet reports False for a
+            # moment, and skipping the wait there is the very race this
+            # exists to avoid.
+            probe.wait(timeout_ms)
+        except RuntimeError:  # pragma: no cover - already deleted
+            pass
+
+    def _join_camera_probe(self, timeout_ms: int = 15000) -> None:
+        """Stop the background probe and wait for it, so nothing outlives the
+        window. The probe checks between devices, so this waits only for the
+        one device it is already opening."""
+        probe = self._camera_probe
+        if probe is None:
+            return
+        try:
+            probe.cancel()
+            probe.wait(timeout_ms)
+            running = probe.isRunning()
+        except RuntimeError:  # pragma: no cover - already deleted
+            self._camera_probe = None
+            return
+        if running:
+            # It is stuck inside a device open that will not give up. Leaving
+            # the object alone is the safe move: deleting a running QThread
+            # aborts the process.
+            return
+        self._on_camera_probe_finished()
 
     def _populate_cameras(self, indices: list[int]) -> None:
         """Offer every camera that answered, keeping the auto-detect entry."""
@@ -357,7 +458,14 @@ class KioskWindow(QMainWindow):
             self._camera_button.setText("Start camera")
             self._camera_hint.setText("Camera stopped.")
         else:
-            ok, message = self._camera.start(self._selected_camera())
+            # Opening a device and waiting for its first frame takes a moment,
+            # so the click acknowledges itself instead of appearing to do
+            # nothing for a second and a half.
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            try:
+                ok, message = self._camera.start(self._selected_camera())
+            finally:
+                QApplication.restoreOverrideCursor()
             self._camera_button.setText("Stop camera" if ok else "Start camera")
             self._camera_hint.setText(message)
 
@@ -676,6 +784,9 @@ class KioskWindow(QMainWindow):
         self.close()
 
     def _release_resources(self) -> None:
+        # Nothing may still be probing as the window goes: a thread destroyed
+        # mid-call while it is inside OpenCV is a crash, not a warning.
+        self._join_camera_probe()
         if self._camera is not None:
             try:
                 self._camera.stop()
