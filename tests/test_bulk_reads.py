@@ -233,10 +233,18 @@ def test_weekly_report_is_unchanged_by_the_bulk_read(context, admin, crew, froze
 
 
 def test_dashboard_summary_is_unchanged_by_the_bulk_read(context, admin, crew):
-    today = context.clock.today().strftime("%Y-%m-%d")
+    from datetime import datetime, time as dt_time
+
+    # Anchored to 09:00 on today's date: the module otherwise runs on the
+    # real clock, and a suite ordered after the configured shift end
+    # (17:00 + grace) flags the still-working session as missing before
+    # the read even happens.
+    anchored = datetime.combine(context.clock.now().date(), dt_time(hour=9, minute=0))
+    context.attendance.set_now_provider(lambda: anchored)
+    today = anchored.strftime("%Y-%m-%d")
     # One closed session, one still working, one who never scanned.
-    _closed(crew[0], context, today, "09:00", "17:00")
-    context.attendance.time_in(crew[1], context.clock.now() - timedelta(hours=1))
+    _closed(crew[0], context, today, "08:00", "08:55")
+    context.attendance.time_in(crew[1], anchored - timedelta(hours=1))
 
     summary = context.attendance.dashboard()
     assert len(summary.rows) == len(crew)
