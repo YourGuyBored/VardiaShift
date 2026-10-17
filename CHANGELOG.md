@@ -7,6 +7,22 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Auto time-out**: close forgotten sessions at a time you pick. When the
+  switch in Settings -> Attendance is on, a session that is still open at
+  *Auto time-out at* (default 23:59) is closed with that moment recorded as
+  the time-out, and labelled *Auto time-out* on the dashboard, in the
+  attendance table and in reports so you can review it. Until now a
+  forgotten session froze that employee until an administrator closed it
+  by hand; now the app clears it on its own the next time anyone scans or
+  opens the dashboard. Every closure is audited (credited to "system",
+  because no person decided it). A session clocked in after the cutoff
+  (an overnight session, or a night shift) is cut off the next day at the
+  same time instead of the same night. This replaces the old "Auto-close
+  after N hours" rule, which was written but never wired to anything;
+  existing databases are not affected because it had never run. Files:
+  `app/models/settings.py`, `app/services/attendance_service.py`,
+  `tests/test_attendance.py`.
+
 * Phone check-in can now ask for a **personal PIN**. The administrator gives
   each employee a 4 to 8 digit PIN on the Employees page, and when Settings
   says require it, the Time in and Time out buttons only appear after the
@@ -32,6 +48,12 @@ All notable changes to VardiaShift are documented here. The format follows
   Existing databases migrate in place and keep all of their data; a fresh
   install includes the column from the start. Files: `app/database/migrations.py`,
   `tests/test_employees.py`.
+
+### Changed
+
+* The README gained a Roadmap section listing what is being built next, and
+  the repository page now states in one line what the app is (the GitHub
+  description was empty). Files: `README.md`.
 
 ## [1.4.0] - 2026-10-16
 

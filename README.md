@@ -627,6 +627,33 @@ without rewriting screens or queries.
 
 ---
 
+## Roadmap
+
+VardiaShift is being built out in stages. Roughly in order:
+
+* Shift scheduling with per-employee assignments, and late / early-out /
+  no-show flags next to the existing missing time-out flag.
+* Leave tracking (sick, vacation, holiday, other) entered by an
+  administrator, so approved leave never counts against anyone.
+* Optional break tracking between time-in and time-out.
+* Holiday calendars and overtime multipliers, surfaced in reports.
+* Bulk employee import from a CSV or spreadsheet, with a downloadable
+  template, validation and a preview before anything is written.
+* More dashboard charts: weekly hours trend, lateness patterns, hours by
+  department.
+* Payroll export: hours per pay period per employee as CSV/XLSX.
+* Print-ready PDF reports (daily, weekly, monthly, per employee).
+* A read-only "Viewer" account type that can see the dashboard and reports
+  but change nothing.
+* Optional kiosk photo on every scan (off by default, kept locally) and an
+  English / Filipino language toggle.
+
+Further out and only ever optional: a read-only web view served by the
+phone service, and sync between computers. Keeping data on your own machine
+stays the default.
+
+---
+
 ## Offline-first
 
 After installation VardiaShift works with **no internet connection**. The only
