@@ -3,6 +3,36 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+* Phone check-in can now ask for a **personal PIN**. The administrator gives
+  each employee a 4 to 8 digit PIN on the Employees page, and when Settings
+  says require it, the Time in and Time out buttons only appear after the
+  PIN is typed right. PINs are stored the way admin passwords are (a PBKDF2
+  hash, never the PIN itself) and the PIN is never written to the audit log.
+  Wrong PINs lock that employee out of phone check-in for a few minutes,
+  counted both per employee and per device, and every wrong attempt is
+  logged as a failed phone scan. Files: `app/phone/server.py`,
+  `app/services/employee_service.py`, `app/database/repositories.py`,
+  `app/ui/employee_management.py`, `tests/test_phone.py`,
+  `tests/test_employees.py`, `tests/test_ui.py`.
+* **Allowed networks** in Settings limits check-in to trusted Wi-Fi. List
+  networks the way the router writes them (`192.168.1.0/24`), several
+  comma-separated, and phones from anywhere else are refused before any
+  page is served; leave it empty and everything on the local network that
+  can reach the computer is allowed, as before. The Phone tab in Settings
+  offers a **Use this computer's network** button that pre-fills the field
+  with this machine's own subnet, so restricting check-in to the office
+  Wi-Fi is one click plus Save. Files: `app/phone/server.py`,
+  `app/services/settings_service.py`, `app/ui/settings.py`,
+  `app/utils/validation.py`, `tests/test_phone.py`, `tests/test_ui.py`.
+* Schema version 7 adds a nullable `phone_pin_hash` column to employees.
+  Existing databases migrate in place and keep all of their data; a fresh
+  install includes the column from the start. Files: `app/database/migrations.py`,
+  `tests/test_employees.py`.
+
 ## [1.4.0] - 2026-10-16
 
 ### Added

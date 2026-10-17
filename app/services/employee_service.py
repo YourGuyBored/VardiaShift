@@ -14,12 +14,15 @@ from app.models.audit import (
     ACTION_EMPLOYEE_DELETE,
     ACTION_EMPLOYEE_EDIT,
     ACTION_EMPLOYEE_REACTIVATE,
+    ACTION_PHONE_PIN_CLEAR,
+    ACTION_PHONE_PIN_SET,
     ACTION_QR_REGENERATE,
     SEVERITY_CRITICAL,
     SEVERITY_INFO,
     SEVERITY_WARNING,
 )
 from app.models.employee import Employee, EmployeeStatus
+from app.services.security import hash_password
 from app.utils.validation import (
     ValidationError,
     optional_text,
@@ -27,6 +30,7 @@ from app.utils.validation import (
     validate_employee_code,
     validate_employee_payload,
     validate_full_name,
+    validate_phone_pin,
     validate_weekly_goal_hours,
 )
 
@@ -390,6 +394,55 @@ class EmployeeService:
             description=f"Deactivated employee QR for {employee.employee_code}",
             severity=SEVERITY_WARNING,
         )
+
+    # -- phone PIN -----------------------------------------------------------
+    def set_phone_pin(
+        self, employee: Employee, pin: str, admin_username: str = "system", reason: str = ""
+    ) -> Employee:
+        """Store a hashed phone check-in PIN for one employee.
+
+        The PIN itself is never written anywhere; only its PBKDF2 hash lands
+        in the database, exactly like admin passwords.
+        """
+        cleaned = validate_phone_pin(pin)
+        had_pin = employee.has_phone_pin
+        self.repos.employees.set_phone_pin_hash(
+            employee.employee_id, hash_password(cleaned)
+        )
+        self.repos.audit.log(
+            ACTION_PHONE_PIN_SET,
+            admin_username=admin_username,
+            entity_type="employee",
+            entity_id=employee.employee_id,
+            description=(
+                f"{'Replaced the' if had_pin else 'Set a'} phone PIN for "
+                f"{employee.employee_code} - {employee.full_name}"
+            ),
+            reason=reason,
+            severity=SEVERITY_INFO,
+        )
+        return self.repos.employees.get(employee.employee_id) or employee
+
+    def clear_phone_pin(
+        self, employee: Employee, admin_username: str = "system", reason: str = ""
+    ) -> Employee:
+        """Remove an employee's phone PIN, if they had one."""
+        if not employee.has_phone_pin:
+            return employee
+        self.repos.employees.set_phone_pin_hash(employee.employee_id, None)
+        self.repos.audit.log(
+            ACTION_PHONE_PIN_CLEAR,
+            admin_username=admin_username,
+            entity_type="employee",
+            entity_id=employee.employee_id,
+            description=(
+                f"Cleared the phone PIN for {employee.employee_code} - "
+                f"{employee.full_name}"
+            ),
+            reason=reason,
+            severity=SEVERITY_WARNING,
+        )
+        return self.repos.employees.get(employee.employee_id) or employee
 
     @staticmethod
     def is_qr_kind_employee(kind: str) -> bool:

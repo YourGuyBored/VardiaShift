@@ -380,6 +380,16 @@ Details worth knowing:
   fine and then open nothing.
 * The link carries the same revocable token as the employee QR - regenerating
   the employee QR invalidates old phone links too.
+* **Personal PIN (optional).** Give an employee a 4 to 8 digit PIN when you
+  add or edit them on the Employees page, then tick *Require a personal
+  phone PIN* in Settings. Their buttons only appear after the PIN is typed
+  right, so a borrowed link is not enough on its own. Someone with no PIN
+  yet is told to ask for one rather than being let through; an employee who
+  is locked out by too many wrong PINs can still use the desktop kiosk.
+* **Allowed networks (optional).** If you only want office Wi-Fi to reach
+  check-in, list it in Settings like `192.168.1.0/24` (one click fills this
+  in from the computer's own network) and everything else is refused before
+  the page is even served.
 * Each button tap uses its own one-time code, so double-taps and replays
   record nothing twice. Pressing one button does not spend the other's code.
   Simultaneous requests from kiosk and phone cannot create duplicate rows

@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.constants import APP_VERSION
 from app.database.database import Database, utc_now
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL,
     deactivated_at   TEXT,
-    deactivated_by   TEXT
+    deactivated_by   TEXT,
+    phone_pin_hash   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_employees_status ON employees (status);
@@ -213,6 +214,15 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """ALTER TABLE employees ADD COLUMN badge_code TEXT""",
             """CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_badge
                ON employees (badge_code COLLATE NOCASE) WHERE badge_code IS NOT NULL""",
+        ],
+    ),
+    (
+        7,
+        [
+            # Optional hashed PIN for phone check-in. Keys are never stored in
+            # readable form; NULL means the employee has no phone PIN yet and
+            # keeps existing rows untouched.
+            "ALTER TABLE employees ADD COLUMN phone_pin_hash TEXT",
         ],
     ),
 ]

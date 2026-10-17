@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass, field
 
@@ -131,6 +132,41 @@ def validate_weekly_goal_hours(value: int | float | str) -> int:
             f"Weekly goal cannot exceed {MAX_WEEKLY_GOAL_HOURS} hours.", "weekly_goal_hours"
         )
     return hours
+
+
+def validate_phone_pin(value: str, field_name: str = "Phone PIN") -> str:
+    """Validate a phone check-in PIN: digits only, 4 to 8 characters.
+
+    Returns the cleaned PIN. Digits only because phones show a numeric
+    keypad when one is asked for, which keeps the entry fast and typo-free.
+    """
+    text = (value or "").strip()
+    if not text.isdigit() or not 4 <= len(text) <= 8:
+        raise ValidationError(
+            f"{field_name} must be 4 to 8 digits (numbers only).", field_name
+        )
+    return text
+
+
+def parse_network_list(text: str | None) -> list[ipaddress.IPNetwork]:
+    """Parse a comma-separated list of networks or single addresses.
+
+    Accepts CIDR blocks (``192.168.1.0/24``) and bare addresses
+    (``192.168.1.7`` becomes ``/32``). Entries that do not parse are skipped
+    rather than raised: Settings validation refuses them at save time, so an
+    unparseable value can only reach here from a hand-edited database, and a
+    typo in one entry should not lock the whole service.
+    """
+    networks: list[ipaddress.IPNetwork] = []
+    for piece in (text or "").split(","):
+        entry = piece.strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue
+    return networks
 
 
 def validate_time_string(value: str, field_name: str = "Time") -> str:

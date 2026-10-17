@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -69,6 +70,7 @@ class EmployeeDialog(QDialog):
         self._department = QLineEdit()
         self._position = QLineEdit()
         self._badge = QLineEdit()
+        self._pin = QLineEdit()
         self._goal = Select()
         self._goal.setEditable(True)
 
@@ -92,6 +94,7 @@ class EmployeeDialog(QDialog):
             "department": self._department,
             "position": self._position,
             "badge_code": self._badge,
+            "phone_pin": self._pin,
             "weekly_goal_hours": self._goal,
         }
 
@@ -108,6 +111,19 @@ class EmployeeDialog(QDialog):
         layout.addWidget(self._row("Department", self._department, "IT", "department"))
         layout.addWidget(self._row("Position", self._position, "Student Assistant", "position"))
         layout.addWidget(self._row("Custom code (optional)", self._badge, "Badge no., short code, nickname", "badge_code"))
+        layout.addWidget(
+            self._row(
+                "Phone PIN (optional)",
+                self._pin,
+                "4 to 8 digits, asked for on the employee's phone",
+                "phone_pin",
+            )
+        )
+        self._pin_clear = QCheckBox("Remove the stored phone PIN")
+        self._pin_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pin_clear.setVisible(bool(employee and employee.has_phone_pin))
+        self._pin_clear.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
+        layout.addWidget(self._pin_clear)
         layout.addWidget(self._row("Weekly work goal", self._goal, "", "weekly_goal_hours"))
 
         note = QLabel(
@@ -194,7 +210,11 @@ class EmployeeDialog(QDialog):
 
     # -- save ----------------------------------------------------------------
     def _on_save(self) -> None:
-        from app.utils.validation import validate_badge_code
+        from app.utils.validation import (
+            ValidationError,
+            validate_badge_code,
+            validate_phone_pin,
+        )
 
         self._clear_errors()
         goal = self._goal_value()
@@ -210,12 +230,18 @@ class EmployeeDialog(QDialog):
         except ValidationError as exc:
             payload.errors["badge_code"] = exc.message
             badge = None
+        pin_text = self._pin.text().strip()
+        try:
+            pin = validate_phone_pin(pin_text) if pin_text else ""
+        except ValidationError as exc:
+            payload.errors["phone_pin"] = exc.message
+            pin = ""
         if payload.errors:
             self._show_errors(payload.errors)
             return
         try:
             if self.employee is None:
-                self.context.employees.create(
+                saved = self.context.employees.create(
                     payload.employee_code,
                     payload.full_name,
                     payload.department,
@@ -225,7 +251,7 @@ class EmployeeDialog(QDialog):
                     badge_code=badge,
                 )
             else:
-                self.context.employees.update(
+                saved = self.context.employees.update(
                     self.employee,
                     payload.full_name,
                     payload.department,
@@ -249,6 +275,13 @@ class EmployeeDialog(QDialog):
             if field:
                 self._show_errors({field: message})
             return
+        username = self.context.current_username or "system"
+        # The PIN is stored only after the employee record itself is saved,
+        # so a failed save can never leave a half-registered employee.
+        if pin_text:
+            self.context.employees.set_phone_pin(saved, pin, admin_username=username)
+        elif self.employee is not None and self._pin_clear.isChecked():
+            self.context.employees.clear_phone_pin(saved, admin_username=username)
         self.accept()
 
 

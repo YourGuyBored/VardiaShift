@@ -14,6 +14,12 @@ Security notes:
   so replaying a request or double-tapping the button cannot record twice.
 * Unknown tokens get an identical generic 404; repeated failures from one
   address are throttled.
+* When a phone PIN is required in Settings, the Time in / Time out buttons
+  only appear after the employee types their personal PIN. Wrong PINs lock
+  the employee out of phone check-in for a few minutes, per employee AND per
+  device.
+* An optional allowed-network list in Settings refuses devices from outside
+  the configured subnets before anything else is served.
 * The server only runs while the administrator enables it, on the configured
   port, and serves the local machine's networks. It does not use UPnP,
   router port forwarding, or any cloud relay, so on a typical home/office
@@ -34,6 +40,8 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.constants import QR_TIME_IN, QR_TIME_OUT
+from app.services.security import verify_password
+from app.utils.validation import parse_network_list
 
 CHECKIN_PATH_PREFIX = "/c/"
 
@@ -48,6 +56,13 @@ NONCE_BYTES = 16
 MAX_FAILURES_BEFORE_THROTTLE = 10
 FAILURE_WINDOW_SECONDS = 5 * 60
 THROTTLE_SECONDS = 60
+
+# Wrong phone PINs lock their employee out harder than unknown links do: the
+# employee can still clock in at the kiosk, while guessing a 4 digit code
+# should take far longer than a minute.
+PIN_MAX_FAILURES = 5
+PIN_FAILURE_WINDOW_SECONDS = 10 * 60
+PIN_THROTTLE_SECONDS = 10 * 60
 
 DEFAULT_PORT = 8123
 
@@ -170,24 +185,41 @@ class _CheckinState:
             return False
         return hmac.compare_digest(expected_token, token)
 
-    def record_failure(self, address: str) -> None:
+    def record_failure(
+        self,
+        key: str,
+        threshold: int | None = None,
+        window: int | None = None,
+        throttle: int | None = None,
+    ) -> None:
+        """Count a failure and lock the key out once enough pile up.
+
+        Phone PIN attempts pass tighter numbers than the generic URL path
+        (``None`` keeps the class-wide defaults, read now so tests can
+        still tune the module constants).
+        """
         now = time.monotonic()
+        window = FAILURE_WINDOW_SECONDS if window is None else window
+        threshold = MAX_FAILURES_BEFORE_THROTTLE if threshold is None else threshold
+        throttle = THROTTLE_SECONDS if throttle is None else throttle
         with self._lock:
-            recent = [t for t in self._failures.get(address, []) if now - t < FAILURE_WINDOW_SECONDS]
+            recent = [
+                t for t in self._failures.get(key, []) if now - t < window
+            ]
             recent.append(now)
-            self._failures[address] = recent
-            if len(recent) >= MAX_FAILURES_BEFORE_THROTTLE:
-                self._throttled_until[address] = now + THROTTLE_SECONDS
+            self._failures[key] = recent
+            if len(recent) >= threshold:
+                self._throttled_until[key] = now + throttle
 
-    def record_success(self, address: str) -> None:
+    def record_success(self, key: str) -> None:
         with self._lock:
-            self._failures.pop(address, None)
-            self._throttled_until.pop(address, None)
+            self._failures.pop(key, None)
+            self._throttled_until.pop(key, None)
 
-    def throttled(self, address: str) -> bool:
+    def throttled(self, key: str) -> bool:
         with self._lock:
             self._prune_locked()
-            return time.monotonic() < self._throttled_until.get(address, 0.0)
+            return time.monotonic() < self._throttled_until.get(key, 0.0)
 
     def _prune_locked(self) -> None:
         now = time.monotonic()
@@ -424,6 +456,186 @@ def _make_handler(context, state: _CheckinState):
                 return None
             return context.repositories.employees.get_by_qr_token(token)
 
+        def _pin_required(self, employee) -> bool:
+            try:
+                return (
+                    context.settings.settings.phone_require_pin
+                    and bool(employee.phone_pin_hash)
+                )
+            except Exception:
+                return False
+
+        def _network_allowed(self) -> bool:
+            """Honour the optional allowed-networks setting for every route."""
+            try:
+                source = str(context.settings.settings.phone_allowed_networks or "")
+            except Exception:
+                return True
+            allowed = parse_network_list(source)
+            if not allowed:
+                return True  # empty means "any device this computer can reach"
+            try:
+                client = ipaddress.ip_address(self._client())
+            except ValueError:
+                return True  # unusual client (tests, sockets): do not invent a block
+            return any(client in network for network in allowed)
+
+        def _forbidden_page(self) -> None:
+            state.record_failure(self._client())
+            self._send(
+                403,
+                "Wrong network",
+                "<h1 class='err'>This device is not allowed to check in</h1>"
+                "<p>VardiaShift only accepts phones from approved Wi-Fi "
+                "networks. Join the office network, or ask an administrator "
+                "to add yours to the allowed networks in Settings.</p>",
+            )
+
+        def _pin_needed_page(self) -> None:
+            self._send(
+                200,
+                "Phone PIN needed",
+                "<h1 class='warn' style='color:#b45309;font-weight:700'>"
+                "One step missing</h1>"
+                "<p>VardiaShift asks for phone PINs, and yours is not set up "
+                "yet. Ask an administrator to add one for you on the "
+                "Employees page. Until then, clock in at the kiosk as usual."
+                "</p>",
+            )
+
+        def _pin_form(self, token: str, message: str = "") -> None:
+            error = (
+                f"<p class='err'>{html.escape(message)}</p>" if message else "<p></p>"
+            )
+            self._send(
+                200,
+                "Enter your PIN",
+                "<h1>Enter your PIN</h1>"
+                f"{error}"
+                "<p>Type the personal PIN your administrator gave you to "
+                "unlock your check-in buttons.</p>"
+                f"<form method='post' action='{CHECKIN_PATH_PREFIX}{html.escape(token)}'>"
+                "<input type='hidden' name='action' value='pin'>"
+                "<input name='pin' inputmode='numeric' pattern='[0-9]*' "
+                "autocomplete='off' maxlength='8' required "
+                "style='width:100%;box-sizing:border-box;font-size:22px;"
+                "letter-spacing:8px;text-align:center;padding:12px;border:1px "
+                "solid #cbd5e1;border-radius:10px;margin-top:6px'>"
+                "<button type='submit' style='margin-top:12px'>Continue</button>"
+                "</form>"
+                "<p class='meta'>Several wrong attempts wait a few minutes "
+                "before trying again.</p>",
+            )
+
+        def _pin_lockout_page(self) -> None:
+            self._send(
+                429,
+                "Too many wrong PINs",
+                "<h1 class='err'>Too many wrong PIN attempts</h1>"
+                "<p>Phone check-in for this employee waits a few minutes "
+                "before allowing more attempts. Please try again shortly, or "
+                "clock in at the kiosk meanwhile.</p>",
+            )
+
+        def _pin_gate(self, employee, token: str) -> bool:
+            """Anything between the employee and their action buttons.
+
+            Returns ``True`` only when the buttons may be shown right now;
+            otherwise the correct page (PIN entry, PIN missing, or lockout)
+            has already been sent.
+            """
+            try:
+                require_pin = context.settings.settings.phone_require_pin
+            except Exception:
+                require_pin = False
+            if not require_pin:
+                return True
+            if not employee.phone_pin_hash:
+                self._pin_needed_page()
+                return False
+            if state.throttled(token):  # per-employee PIN lockout
+                self._pin_lockout_page()
+                return False
+            self._pin_form(token)
+            return False
+
+        def _handle_pin_post(self, token: str, employee, fields) -> None:
+            try:
+                require_pin = context.settings.settings.phone_require_pin
+            except Exception:
+                require_pin = False
+            if not require_pin or not employee.phone_pin_hash:
+                self._send(
+                    400,
+                    "Unknown action",
+                    "<h1 class='err'>Unknown action</h1>"
+                    "<p>Open your check-in page again and use one of the "
+                    "buttons.</p>",
+                )
+                return
+            if state.throttled(token) or state.throttled(self._client()):
+                self._pin_lockout_page()
+                return
+            supplied = str((fields.get("pin") or [""])[0]).strip()
+            if supplied and verify_password(supplied, employee.phone_pin_hash):
+                state.record_success(token)
+                state.record_success(self._client())
+                self._checkin_page(employee, token)
+                return
+            # Wrong PIN: count against both the employee AND the device, the
+            # employee with the steeper limit.
+            state.record_failure(
+                token, PIN_MAX_FAILURES, PIN_FAILURE_WINDOW_SECONDS,
+                PIN_THROTTLE_SECONDS,
+            )
+            state.record_failure(self._client())
+            try:
+                context.attendance.note_failed_scan(
+                    f"phone:{employee.employee_id}", "phone_pin_failed",
+                    "Wrong phone PIN",
+                )
+            except Exception:
+                pass  # the PIN answer must still go out
+            self._pin_form(token, "Wrong PIN. Try again.")
+
+        def _checkin_page(self, employee, token: str) -> None:
+            # One single-use nonce per button, so pressing one does not
+            # burn the other's nonce.
+            in_nonce = state.issue_nonce(token)
+            out_nonce = state.issue_nonce(token)
+            try:
+                status = context.attendance.current_status(employee)
+            except Exception:
+                status = "not_in"
+            if status in ("open", "missing"):
+                detail = "You are currently clocked in."
+                in_hint, out_hint = "Already clocked in.", ""
+            else:
+                detail = "You are not clocked in yet."
+                in_hint, out_hint = "", "No open session today."
+            self._send(
+                200,
+                f"Check-in - {employee.full_name}",
+                f"<h1>{html.escape(employee.full_name)}</h1>"
+                f"<p>{html.escape(employee.employee_code)}"
+                f"{' - ' + html.escape(employee.department) if employee.department else ''}</p>"
+                f"<p>{detail}</p>"
+                f"<form method='post' action='{CHECKIN_PATH_PREFIX}{html.escape(token)}'>"
+                f"<input type='hidden' name='nonce' value='{in_nonce}'>"
+                "<input type='hidden' name='action' value='time_in'>"
+                "<button type='submit'>Time in</button>"
+                "</form>"
+                f"<form method='post' action='{CHECKIN_PATH_PREFIX}{html.escape(token)}'>"
+                f"<input type='hidden' name='nonce' value='{out_nonce}'>"
+                "<input type='hidden' name='action' value='time_out'>"
+                "<button type='submit' class='secondary'>Time out</button>"
+                "</form>"
+                f"<p class='meta'>Tap once to record. Each button works "
+                f"only once per page load.</p>"
+                + (f"<p class='meta'>{html.escape(in_hint or out_hint)}</p>"
+                   if (in_hint or out_hint) else ""),
+            )
+
         def _service_enabled(self) -> bool:
             try:
                 return bool(context.settings.settings.phone_enabled)
@@ -442,6 +654,9 @@ def _make_handler(context, state: _CheckinState):
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
             if not self._service_enabled():
                 self._disabled_page()
+                return
+            if not self._network_allowed():
+                self._forbidden_page()
                 return
             if state.throttled(self._client()):
                 self._throttled_page()
@@ -464,48 +679,18 @@ def _make_handler(context, state: _CheckinState):
                 if employee is None or not token:
                     self._not_found()
                     return
-                # One single-use nonce per button, so pressing one does not
-                # burn the other's nonce.
-                in_nonce = state.issue_nonce(token)
-                out_nonce = state.issue_nonce(token)
-                try:
-                    status = context.attendance.current_status(employee)
-                except Exception:
-                    status = "not_in"
-                if status in ("open", "missing"):
-                    detail = "You are currently clocked in."
-                    in_hint, out_hint = "Already clocked in.", ""
-                else:
-                    detail = "You are not clocked in yet."
-                    in_hint, out_hint = "", "No open session today."
-                self._send(
-                    200,
-                    f"Check-in - {employee.full_name}",
-                    f"<h1>{html.escape(employee.full_name)}</h1>"
-                    f"<p>{html.escape(employee.employee_code)}"
-                    f"{' - ' + html.escape(employee.department) if employee.department else ''}</p>"
-                    f"<p>{detail}</p>"
-                    f"<form method='post' action='{CHECKIN_PATH_PREFIX}{html.escape(token)}'>"
-                    f"<input type='hidden' name='nonce' value='{in_nonce}'>"
-                    "<input type='hidden' name='action' value='time_in'>"
-                    "<button type='submit'>Time in</button>"
-                    "</form>"
-                    f"<form method='post' action='{CHECKIN_PATH_PREFIX}{html.escape(token)}'>"
-                    f"<input type='hidden' name='nonce' value='{out_nonce}'>"
-                    "<input type='hidden' name='action' value='time_out'>"
-                    "<button type='submit' class='secondary'>Time out</button>"
-                    "</form>"
-                    f"<p class='meta'>Tap once to record. Each button works "
-                    f"only once per page load.</p>"
-                    + (f"<p class='meta'>{html.escape(in_hint or out_hint)}</p>"
-                       if (in_hint or out_hint) else ""),
-                )
+                if not self._pin_gate(employee, token):
+                    return
+                self._checkin_page(employee, token)
                 return
             self._not_found()
 
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
             if not self._service_enabled():
                 self._disabled_page()
+                return
+            if not self._network_allowed():
+                self._forbidden_page()
                 return
             if state.throttled(self._client()):
                 self._throttled_page()
@@ -522,15 +707,16 @@ def _make_handler(context, state: _CheckinState):
             fields = urllib.parse.parse_qs(
                 self.rfile.read(min(length, 4096)).decode("utf-8", "replace")
             )
-            nonce = (fields.get("nonce") or [""])[0]
             action = (fields.get("action") or [""])[0]
             employee = self._employee_for(token) if token else None
-            if (
-                employee is None
-                or not token
-                or not nonce
-                or not state.consume_nonce(nonce, token)
-            ):
+            if employee is None or not token:
+                self._not_found()
+                return
+            if action == "pin":
+                self._handle_pin_post(token, employee, fields)
+                return
+            nonce = (fields.get("nonce") or [""])[0]
+            if not nonce or not state.consume_nonce(nonce, token):
                 self._not_found()
                 return
             if action not in (QR_TIME_IN, QR_TIME_OUT):
@@ -603,6 +789,9 @@ __all__ = [
     "DEFAULT_PORT",
     "PhoneAddressError",
     "PhoneServer",
+    "PIN_FAILURE_WINDOW_SECONDS",
+    "PIN_MAX_FAILURES",
+    "PIN_THROTTLE_SECONDS",
     "_CheckinState",
     "lan_addresses",
     "lan_ip",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import timedelta
 from pathlib import Path
 
@@ -500,6 +501,38 @@ class SettingsPage(QWidget):
         hint.setObjectName("CardHint")
         card.add(hint)
 
+        # Optional per-phone PIN: surface the fail-closed consequence while
+        # the administrator is looking at this page, not as a surprise later.
+        try:
+            settings = self.context.settings.settings
+            missing_pins = self.context.repositories.employees.count_missing_phone_pin()
+        except Exception:
+            missing_pins = 0
+        if settings.phone_require_pin and missing_pins:
+            pin_warning = QLabel(
+                f"{missing_pins} active employee"
+                f"{'s have' if missing_pins != 1 else ' has'} no phone PIN yet "
+                "and cannot use phone check-in until you set one on the "
+                "Employees page."
+            )
+            pin_warning.setWordWrap(True)
+            pin_warning.setProperty("role", "warning")
+            card.add(pin_warning)
+
+        # Fill the allowed-networks filter with this computer's own subnet,
+        # so restricting check-in to the office Wi-Fi is one click plus Save.
+        network_row = QHBoxLayout()
+        network_row.setSpacing(8)
+        self._phone_network_button = GhostButton(
+            "Use this computer's network for the filter", self._fill_phone_network
+        )
+        network_row.addWidget(self._phone_network_button)
+        self._phone_network_status = QLabel("")
+        self._phone_network_status.setWordWrap(True)
+        self._phone_network_status.setObjectName("CardHint")
+        network_row.addWidget(self._phone_network_status, 1)
+        card.add_layout(network_row)
+
         self._phone_firewall = QLabel("")
         self._phone_firewall.setWordWrap(True)
         self._phone_firewall.setObjectName("CardHint")
@@ -578,6 +611,40 @@ class SettingsPage(QWidget):
     def _stop_phone(self) -> None:
         self.context.phone.stop()
         self._refresh_phone_status()
+
+    # -- phone allowed networks ---------------------------------------------
+    def _fill_phone_network(self) -> None:
+        """Pre-fill the Allowed networks filter with this computer's subnet.
+
+        The edit stays pending until the Save button: nothing is written by
+        a helper click, and the editor keeps whatever the admin then changes.
+        """
+        from app.phone.server import lan_ip
+
+        editor = self._editors.get("phone_allowed_networks")
+        if editor is None:
+            return
+        ip = lan_ip()
+        if not ip:
+            QMessageBox.information(
+                self,
+                "No network found",
+                "This computer is not connected to a local network right "
+                "now. Connect, then try again.",
+            )
+            return
+        network = ipaddress.ip_network(f"{ip}/24", strict=False)
+        text = str(network)
+        existing = editor.text().strip()
+        if existing:
+            entries = [piece.strip() for piece in existing.split(",") if piece.strip()]
+            if text not in entries:
+                entries.append(text)
+            text = ", ".join(entries)
+        editor.setText(text)
+        self._phone_network_status.setText(
+            f"'Allowed networks' now lists {text} - press Save to store it."
+        )
 
     # -- phone firewall ------------------------------------------------------
     def _describe_firewall(self) -> None:

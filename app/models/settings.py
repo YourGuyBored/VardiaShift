@@ -247,6 +247,22 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "Start listening automatically when VardiaShift opens (only if phone "
         "attendance is enabled).",
     ),
+    SettingSpec(
+        "phone_require_pin", "Require a personal phone PIN", TYPE_BOOL, False,
+        GROUP_PHONE,
+        "Employees must type their own PIN on the phone before the Time in and "
+        "Time out buttons appear. Set PINs on the Employees page. Someone who "
+        "has no PIN yet cannot use phone check-in until one is set, so assign "
+        "PINs to everyone before switching this on.",
+    ),
+    SettingSpec(
+        "phone_allowed_networks", "Allowed networks", TYPE_TEXT, "", GROUP_PHONE,
+        "Limit check-in to certain Wi-Fi networks. Comma-separate several, "
+        "written like 192.168.1.0/24 (a single address such as 192.168.1.7 "
+        "also works). Leave empty to allow any device that can reach this "
+        "computer, which is normally only your local network.",
+        max_length=300,
+    ),
     # -- Google Sheets export (optional integration) -------------------------
     SettingSpec(
         "sheets_enabled", "Enable Google Sheets export", TYPE_BOOL, False, GROUP_SHEETS,
@@ -450,6 +466,14 @@ class AppSettings:
     @property
     def phone_auto_start(self) -> bool:
         return bool(self.get("phone_auto_start"))
+
+    @property
+    def phone_require_pin(self) -> bool:
+        return bool(self.get("phone_require_pin"))
+
+    @property
+    def phone_allowed_networks(self) -> str:
+        return str(self.get("phone_allowed_networks") or "")
 
     @property
     def sheets_enabled(self) -> bool:

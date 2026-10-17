@@ -634,3 +634,209 @@ def test_autostart_needs_both_switches(context, admin):
     started, _message = context.maybe_autostart_phone()
     assert started is False
     assert context.phone.running is False
+
+
+# -- allowed networks ---------------------------------------------------------
+def post_fields(url: str, fields: dict[str, str]) -> tuple[int, str]:
+    data = urllib.parse.urlencode(fields).encode()
+    request = urllib.request.Request(url, data=data, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8")
+
+
+def test_checkin_is_open_by_default(running):
+    server, employee = running
+    code, page = get(f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}")
+    assert code == 200
+    assert "Time in" in page
+    assert "Enter your PIN" not in page
+
+
+def test_other_networks_are_refused(running):
+    server, employee = running
+    context = server._context
+    context.settings.set(
+        "phone_allowed_networks", "192.168.50.0/24, 10.1.1.0/28", "admin"
+    )
+    code, page = get(base(server) + "/")
+    assert code == 403
+    assert "not allowed" in page
+
+    code, page = get(f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}")
+    assert code == 403
+
+    code, page = post(f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}", "x")
+    assert code == 403
+
+
+def test_configured_networks_are_honoured(running):
+    server, employee = running
+    context = server._context
+    context.settings.set("phone_allowed_networks", "127.0.0.1/32, 192.168.5.0/24", "admin")
+    code, page = get(f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}")
+    assert code == 200
+    assert "Time in" in page
+
+
+def test_loopback_passes_when_a_single_address_is_allowed(running):
+    server, _employee = running
+    server._context.settings.set("phone_allowed_networks", "127.0.0.1", "admin")
+    code, page = get(base(server) + "/")
+    assert code == 200
+
+
+def test_unreadable_network_list_fails_open(running):
+    # A hand-edited database could carry text the parsers refuse. The whole
+    # service must not lock out because of one typo: the setting either
+    # validates at save time, or the entry is ignored.
+    server, employee = running
+    context = server._context
+    context.database.execute(
+        "INSERT INTO settings (key, value, updated_at) "  # noqa: S608 - test fixture
+        "VALUES ('phone_allowed_networks', 'banana', 'x') "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    )
+    context.settings.refresh()
+    code, page = get(f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}")
+    assert code == 200
+    assert "Time in" in page
+
+
+def test_allowed_networks_setting_validates(context):
+    message = context.settings.validate("phone_allowed_networks", "banana")
+    assert "192.168.1.0/24" in message
+    assert context.settings.validate("phone_allowed_networks", "") == ""
+    assert context.settings.validate("phone_allowed_networks", "192.168.1.0/24") == ""
+    assert (
+        context.settings.validate("phone_allowed_networks", "192.168.1.0/24, 10.0.0.2")
+        == ""
+    )
+
+
+# -- phone PIN ----------------------------------------------------------------
+def pin_url(server, employee) -> str:
+    return f"{base(server)}{CHECKIN_PATH_PREFIX}{employee.qr_token}"
+
+
+def require_pins(context, employee=None, pin: str | None = "4321"):
+    """Turn the PIN requirement on, optionally setting one employee's PIN."""
+    if employee is not None and pin is not None:
+        context.employees.set_phone_pin(employee, pin, admin_username="admin")
+    context.settings.set("phone_require_pin", True, "admin")
+
+
+def test_pin_page_hides_the_buttons(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    code, page = get(pin_url(server, employee))
+    assert code == 200
+    assert "Enter your PIN" in page
+    assert "Time in" not in page
+    assert "name='nonce'" not in page   # no nonce escapes before the PIN
+
+
+def test_employee_without_pin_is_told_what_to_do(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, pin=None)
+    code, page = get(pin_url(server, employee))
+    assert code == 200
+    assert "PIN" in page
+    assert "Enter your PIN" not in page
+    assert "Time in" not in page
+
+
+def test_setting_the_switch_off_restores_open_check_in(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    context.settings.set("phone_require_pin", False, "admin")
+    code, page = get(pin_url(server, employee))
+    assert code == 200
+    assert "Time in" in page
+
+
+def test_wrong_pin_repeats_the_form(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    url = pin_url(server, employee)
+    code, body = post_fields(url, {"action": "pin", "pin": "9999"})
+    assert code == 200
+    assert "Wrong PIN" in body
+    assert "Time in" not in body
+
+
+def test_text_pins_are_refused_not_recorded(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    url = pin_url(server, employee)
+    code, body = post_fields(url, {"action": "pin", "pin": "abcd"})
+    assert code == 200
+    assert "Wrong PIN" in body
+    assert context.attendance.record_for_today(employee) is None
+
+
+def test_correct_pin_leads_to_a_recorded_time_in(running, frozen):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    url = pin_url(server, employee)
+    code, page = post_fields(url, {"action": "pin", "pin": "4321"})
+    assert code == 200
+    assert "Time in" in page
+    code, body = post(url, nonce_from(page, "time_in"), "time_in")
+    assert code == 200
+    assert "TIME-IN RECORDED" in body
+    assert context.attendance.record_for_today(employee) is not None
+
+
+def test_buttons_stay_locked_while_the_pin_page_is_open(running):
+    # A straight time_in post without a PIN-verified nonce is just an
+    # unknown link: nothing is recorded.
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    url = pin_url(server, employee)
+    code, _page = get(url)
+    assert code == 200
+    code, body = post(url, "not-a-real-nonce", "time_in")
+    assert code == 404
+    assert context.attendance.record_for_today(employee) is None
+
+
+def test_repeated_wrong_pins_lock_the_employee_out(running, monkeypatch):
+    import app.phone.server as phone_module
+
+    phone_module.PIN_MAX_FAILURES = 3
+    phone_module.PIN_THROTTLE_SECONDS = 10 * 60
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    url = pin_url(server, employee)
+    for _ in range(3):
+        code, body = post_fields(url, {"action": "pin", "pin": "1111"})
+        assert code == 200, body
+    code, body = post_fields(url, {"action": "pin", "pin": "4321"})
+    assert code == 429
+    assert "Too many wrong PIN attempts" in body
+    # The correct PIN cannot ride through a lockout either.
+    code, page = get(url)
+    assert code == 429
+    assert "Enter your PIN" not in page
+
+
+def test_wrong_pin_attempts_land_in_the_scan_log(running):
+    server, employee = running
+    context = server._context
+    require_pins(context, employee)
+    post_fields(pin_url(server, employee), {"action": "pin", "pin": "8888"})
+    rows = context.database.query(
+        "SELECT kind, accepted FROM scan_events WHERE kind = 'phone_pin_failed'"
+    )
+    assert rows and rows[0]["accepted"] == 0

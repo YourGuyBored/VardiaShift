@@ -101,7 +101,8 @@ class AdminRepository:
 class EmployeeRepository:
     COLUMNS = (
         "employee_id, employee_code, full_name, department, position, status, "
-        "weekly_goal_hours, badge_code, qr_token, date_added, created_at, updated_at"
+        "weekly_goal_hours, badge_code, qr_token, date_added, created_at, updated_at, "
+        "phone_pin_hash"
     )
 
     def __init__(self, db: Database) -> None:
@@ -187,6 +188,22 @@ class EmployeeRepository:
             "UPDATE employees SET qr_token = ?, updated_at = ? WHERE employee_id = ?",
             (qr_token, utc_now(), employee_id),
         )
+
+    def set_phone_pin_hash(self, employee_id: int, pin_hash: str | None) -> None:
+        """Store (or clear with ``None``) the hashed phone PIN."""
+        self.db.execute(
+            "UPDATE employees SET phone_pin_hash = ?, "
+            "updated_at = ? WHERE employee_id = ?",
+            (pin_hash, utc_now(), employee_id),
+        )
+
+    def count_missing_phone_pin(self) -> int:
+        """Active employees without a phone PIN (for Settings hints)."""
+        total = self.db.scalar(
+            "SELECT COUNT(*) FROM employees "
+            "WHERE status = 'active' AND (phone_pin_hash IS NULL OR phone_pin_hash = '')"
+        )
+        return int(total)
 
     def delete(self, employee_id: int) -> None:
         """Only ever called when the employee has no attendance history."""

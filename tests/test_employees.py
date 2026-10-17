@@ -342,15 +342,90 @@ def test_search_finds_badge_codes(context, admin, employee):
 
 
 def test_migration_6_adds_nullable_badge_column(context, admin, employee):
-    from app.database.migrations import current_version, migrate, set_meta
+    from app.database.migrations import SCHEMA_VERSION, current_version, migrate, set_meta
 
     assert employee.badge_code is None
     set_meta(context.database, "schema_version", "5")
     context.database.execute("DROP INDEX IF EXISTS idx_employees_badge")
-    assert migrate(context.database) == 6
-    assert current_version(context.database) == 6
+    assert migrate(context.database) == SCHEMA_VERSION
+    assert current_version(context.database) == SCHEMA_VERSION
     assert context.employees.get(employee.employee_id).badge_code is None
     updated = context.employees.update(
         employee, employee.full_name, badge_code="M6", admin_username="admin"
     )
     assert updated.badge_code == "M6"
+
+
+# -- phone PIN ----------------------------------------------------------------
+def test_phone_pin_is_stored_hashed(context, admin, employee):
+    updated = context.employees.set_phone_pin(employee, "4321", admin_username="admin")
+    assert updated.has_phone_pin
+    stored = updated.phone_pin_hash
+    assert stored.startswith("pbkdf2_sha256$")
+    assert "4321" not in stored
+    from app.services.security import verify_password
+
+    assert verify_password("4321", stored)
+    assert not verify_password("0000", stored)
+
+
+def test_phone_pin_replaces_do_not_duplicate(context, admin, employee):
+    first = context.employees.set_phone_pin(employee, "4321", admin_username="admin")
+    second = context.employees.set_phone_pin(first, "987654", admin_username="admin")
+    from app.services.security import verify_password
+
+    assert verify_password("987654", second.phone_pin_hash)
+    assert not verify_password("4321", second.phone_pin_hash)
+
+
+def test_phone_pin_validation(context, admin, employee):
+    for bad in ("abc", "123", "123456789", "", "12 34", "12.34"):
+        with pytest.raises(ValidationError):
+            context.employees.set_phone_pin(employee, bad, admin_username="admin")
+    fetched = context.employees.get(employee.employee_id)
+    assert not fetched.has_phone_pin   # a rejected PIN must store nothing
+
+
+def test_clear_phone_pin(context, admin, employee):
+    context.employees.set_phone_pin(employee, "4321", admin_username="admin")
+    cleared = context.employees.clear_phone_pin(
+        context.employees.get(employee.employee_id), admin_username="admin"
+    )
+    assert not cleared.has_phone_pin
+    assert cleared.phone_pin_hash == ""
+    # Clearing an employee who has no PIN changes nothing and is quiet.
+    again = context.employees.clear_phone_pin(cleared, admin_username="admin")
+    assert again.employee_id == employee.employee_id
+
+
+def test_phone_pin_actions_are_audited(context, admin, employee):
+    context.employees.set_phone_pin(employee, "4321", admin_username="admin")
+    context.employees.clear_phone_pin(
+        context.employees.get(employee.employee_id), admin_username="admin"
+    )
+    actions = {log.action for log in context.repositories.audit.list_recent(limit=10)}
+    assert "employee_phone_pin_set" in actions
+    assert "employee_phone_pin_clear" in actions
+    set_log = context.repositories.audit.list_recent(action="employee_phone_pin_set")[0]
+    assert set_log.new_value == ""   # the PIN itself never enters the log
+
+
+def test_missing_phone_pin_count(context, admin):
+    context.employees.create("EMP-001", "Juan", admin_username="admin")
+    context.employees.create("EMP-002", "Pedro", admin_username="admin")
+    assert context.repositories.employees.count_missing_phone_pin() == 2
+    employee = context.employees.get_by_code("EMP-001")
+    context.employees.set_phone_pin(employee, "4321", admin_username="admin")
+    assert context.repositories.employees.count_missing_phone_pin() == 1
+
+
+def test_migration_7_adds_phone_pin_column(context, admin, employee):
+    from app.database.migrations import SCHEMA_VERSION, current_version, migrate, set_meta
+
+    set_meta(context.database, "schema_version", "6")
+    # The badge index is a v6 schema detail this database already carries.
+    assert migrate(context.database) == SCHEMA_VERSION
+    assert current_version(context.database) == SCHEMA_VERSION
+    assert context.employees.get(employee.employee_id).phone_pin_hash == ""
+    updated = context.employees.set_phone_pin(employee, "2468", admin_username="admin")
+    assert updated.has_phone_pin

@@ -32,10 +32,15 @@ class Employee:
     qr_token: str = ""
     created_at: str = ""
     updated_at: str = ""
+    phone_pin_hash: str = ""
 
     @property
     def is_active(self) -> bool:
         return self.status == EmployeeStatus.ACTIVE
+
+    @property
+    def has_phone_pin(self) -> bool:
+        return bool(self.phone_pin_hash)
 
     @property
     def status_label(self) -> str:
@@ -91,6 +96,9 @@ class Employee:
             qr_token=row["qr_token"] or "",
             created_at=row["created_at"] or "",
             updated_at=row["updated_at"] or "",
+            phone_pin_hash=(row["phone_pin_hash"] or "")
+            if "phone_pin_hash" in keys and row["phone_pin_hash"]
+            else "",
         )
 
     @classmethod

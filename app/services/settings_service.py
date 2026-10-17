@@ -81,6 +81,23 @@ class SettingsService:
                     f"{spec.label} must be a hex colour such as #14508C, "
                     f"not '{custom}'."
                 )
+        if key == "phone_allowed_networks":
+            from app.utils.validation import parse_network_list
+
+            text = str(coerced).strip()
+            if text:
+                bad = [
+                    piece.strip()
+                    for piece in text.split(",")
+                    if piece.strip()
+                    and not parse_network_list(piece)
+                ]
+                if bad:
+                    return (
+                        f"{spec.label} must be network addresses like "
+                        "192.168.1.0/24, comma-separated, not '"
+                        f"{bad[0]}'."
+                    )
         if spec.type == "choice" and spec.choices and coerced not in spec.choices:
             # Long choice lists (time zones) would produce an unusable message.
             if len(spec.choices) <= 12:

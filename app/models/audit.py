@@ -20,6 +20,8 @@ ACTION_QR_REGENERATE = "qr_regenerate"
 ACTION_BACKUP = "backup_create"
 ACTION_RESTORE = "backup_restore"
 ACTION_AUTO_CLOSE = "attendance_autoclose"
+ACTION_PHONE_PIN_SET = "employee_phone_pin_set"
+ACTION_PHONE_PIN_CLEAR = "employee_phone_pin_clear"
 
 ACTION_LABELS = {
     ACTION_LOGIN: "Signed in",
@@ -38,6 +40,8 @@ ACTION_LABELS = {
     ACTION_BACKUP: "Database backed up",
     ACTION_RESTORE: "Database restored",
     ACTION_AUTO_CLOSE: "Attendance auto-closed",
+    ACTION_PHONE_PIN_SET: "Phone PIN set",
+    ACTION_PHONE_PIN_CLEAR: "Phone PIN cleared",
 }
 
 SEVERITY_INFO = "info"

@@ -1864,3 +1864,98 @@ def test_settings_test_sheets_connection_flow(context, qt_app, admin_session, mo
     page._test_sheets_connection()
     assert any("Connected Test Sheet" in str(item) for item in infos)
 
+
+
+# -- phone PIN in the employee dialog -----------------------------------------
+def test_employee_dialog_sets_a_phone_pin(context, qt_app, admin_session, employee):
+    from app.ui.employee_management import EmployeeDialog
+
+    dialog = EmployeeDialog(context, employee)
+    assert not dialog._pin_clear.isVisibleTo(dialog)   # nothing stored yet
+    dialog._pin.setText("2468")
+    dialog._on_save()
+    updated = context.employees.get(employee.employee_id)
+    assert updated.has_phone_pin
+    assert "2468" not in updated.phone_pin_hash
+
+
+def test_employee_dialog_clears_a_phone_pin(context, qt_app, admin_session, employee):
+    from app.ui.employee_management import EmployeeDialog
+
+    context.employees.set_phone_pin(employee, "2468", admin_username="admin")
+    dialog = EmployeeDialog(context, context.employees.get(employee.employee_id))
+    assert dialog._pin_clear.isVisibleTo(dialog)
+    dialog._pin_clear.setChecked(True)
+    dialog._on_save()
+    assert not context.employees.get(employee.employee_id).has_phone_pin
+
+
+def test_employee_dialog_keeps_an_untouched_pin(context, qt_app, admin_session, employee):
+    from app.ui.employee_management import EmployeeDialog
+
+    context.employees.set_phone_pin(employee, "2468", admin_username="admin")
+    dialog = EmployeeDialog(context, context.employees.get(employee.employee_id))
+    dialog._name.setText("Renamed Employee")
+    dialog._on_save()
+    updated = context.employees.get(employee.employee_id)
+    # An empty field edits nothing: the stored PIN survives.
+    assert updated.has_phone_pin
+    assert updated.full_name == "Renamed Employee"
+
+
+def test_employee_dialog_rejects_bad_pin(context, qt_app, admin_session):
+    from app.ui.employee_management import EmployeeDialog
+
+    dialog = EmployeeDialog(context, None)
+    dialog._name.setText("Wrong Pin Tester")
+    dialog._pin.setText("abc")
+    dialog._on_save()
+    assert not dialog._errors["phone_pin"].isHidden()
+    assert context.employees.list() == []
+
+
+def test_settings_page_fills_allowed_networks(context, qt_app, admin_session, monkeypatch):
+    import ipaddress
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.settings import SettingsPage
+
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+    )
+    page = SettingsPage(context)
+    from app.phone.server import lan_ip
+
+    ip = lan_ip()
+    if not ip:
+        # Without any usable interface the helper must say so instead of
+        # writing something unfetchable.
+        page._fill_phone_network()
+        assert page._editors["phone_allowed_networks"].text() == ""
+        return
+    page._fill_phone_network()
+    text = page._editors["phone_allowed_networks"].text()
+    expected = str(ipaddress.ip_network(f"{ip}/24", strict=False))
+    assert text == expected
+    assert "now lists" in page._phone_network_status.text()
+    # Nothing is stored until Save.
+    assert context.settings.settings.phone_allowed_networks == ""
+
+
+def test_settings_page_phone_card_warns_about_missing_pins(
+    context, qt_app, admin_session, employee
+):
+    from PySide6.QtWidgets import QLabel
+
+    from app.ui.settings import SettingsPage
+
+    context.settings.set("phone_require_pin", True, "admin")
+    page = SettingsPage(context)
+    card = page._build_phone_status_card()
+    labels = [
+        widget.text()
+        for widget in card.findChildren(QLabel)
+        if "no phone PIN" in widget.text()
+    ]
+    assert labels, "the page must say who still lacks a phone PIN"
