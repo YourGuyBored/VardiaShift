@@ -16,6 +16,49 @@ from app.qr.tokens import build_payload  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def no_camera_hardware(monkeypatch):
+    """UI tests build the real kiosk, but must never open a real camera.
+
+    KioskWindow starts its background camera search as soon as it is built.
+    On a machine without cameras that search should be a quiet look-up. On
+    Windows an FFMPEG open against an empty runner can abort the whole test
+    process while the scan thread is still working, which the camera tests
+    already avoid by using fakes - so the scanner here sees the same kind
+    of stand-in: a device that is never open and never sends a frame.
+    """
+    from types import SimpleNamespace
+
+    import app.qr.scanner as scanner_module
+
+    class EmptyCapture:
+        def __init__(self, *_arguments, **_keywords):
+            pass
+
+        def isOpened(self):
+            return False
+
+        def read(self):
+            return False, None
+
+        def release(self):
+            pass
+
+        def set(self, _prop, _value):
+            return False
+
+        def get(self, _prop):
+            return 0
+
+    fake = SimpleNamespace(
+        VideoCapture=EmptyCapture,
+        CAP_PROP_FRAME_WIDTH=3,
+        CAP_PROP_FRAME_HEIGHT=4,
+    )
+    monkeypatch.setattr(scanner_module, "cv2", fake)
+    monkeypatch.setattr(scanner_module, "OPENCV_AVAILABLE", True)
+
+
+@pytest.fixture(autouse=True)
 def no_blocking_dialogs(monkeypatch):
     """Make every system dialog non-modal so a stray message box cannot hang CI."""
     from PySide6.QtPrintSupport import QPrintDialog
