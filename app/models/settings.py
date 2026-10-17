@@ -171,18 +171,19 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         suffix="min",
     ),
     SettingSpec(
-        "auto_close_missing_timeout", "Auto-close missing time-outs", TYPE_BOOL, False,
+        "auto_close_missing_timeout", "Auto time-out", TYPE_BOOL, False,
         GROUP_ATTENDANCE,
-        "When enabled, VardiaShift closes forgotten sessions after the threshold below "
-        "and writes an audit entry. Never silent.",
+        "When on, a session that is still open at the moment below is closed "
+        "for you and marked for review. Nothing is lost - every automatic "
+        "closure is audited and shows as 'Auto time-out' on the dashboard and "
+        "in reports.",
     ),
     SettingSpec(
-        "auto_close_after_hours", "Auto-close after (hours)", TYPE_FLOAT, 12.0,
+        "auto_close_time", "Auto time-out at", TYPE_TIME, "23:59",
         GROUP_ATTENDANCE,
-        "Only used when auto-close is enabled.",
-        minimum=1,
-        maximum=24,
-        suffix="hours",
+        "The daily moment that automatic closures happen at. An employee "
+        "clocked in after this time is cut off the next day at the same "
+        "time instead of the same night.",
     ),
     SettingSpec(
         "duplicate_scan_window_seconds", "Duplicate scan window (seconds)", TYPE_INT, 8,
@@ -433,8 +434,8 @@ class AppSettings:
         return bool(self.get("auto_close_missing_timeout"))
 
     @property
-    def auto_close_after_minutes(self) -> int:
-        return int(round(float(self.get("auto_close_after_hours") or 12) * 60))
+    def auto_close_time(self) -> str:
+        return str(self.get("auto_close_time") or "23:59")
 
     @property
     def duplicate_scan_window_seconds(self) -> int:

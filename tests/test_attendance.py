@@ -468,20 +468,98 @@ def test_grace_period_delays_the_flag(context, admin, employee, frozen):
 def test_auto_close_is_opt_in_and_audited(context, admin, employee, frozen):
     record = context.attendance.time_in(employee, frozen.at(6, 0))
 
+    # The rule is off by default: nothing closes, however late the day runs.
     assert context.attendance.auto_close_missing_timeouts(frozen.at(23, 0)) == 0
     assert context.repositories.attendance.get(record.attendance_id).status == "open"
 
     context.settings.set("auto_close_missing_timeout", True, "admin")
-    context.settings.set("auto_close_after_hours", 10, "admin")
-    assert context.attendance.auto_close_missing_timeouts(frozen.at(23, 0)) == 1
+    context.settings.set("auto_close_time", "22:00", "admin")
+    # Before the configured moment the session stays open.
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(21, 0)) == 0
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(22, 5)) == 1
+    # Running again closes nothing new.
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(22, 6)) == 0
 
     updated = context.repositories.attendance.get(record.attendance_id)
-    assert updated.time_out is not None
     assert updated.status == "closed"
-    assert updated.duration_minutes == 420  # 06:00 -> 13:00 cap
+    assert updated.source == "auto"
+    assert updated.time_out == frozen.iso(22, 0)
+    assert updated.duration_minutes == 16 * 60  # 06:00 -> 22:00
+    assert context.attendance.source_label(updated.source) == "Auto time-out"
     log = context.repositories.audit.list_recent(action="attendance_autoclose")[0]
     assert log.admin_username == "system"
     assert "Auto-closed" in log.description
+    assert "for review" in log.reason
+
+
+def test_auto_close_waits_for_the_configured_time(context, admin, employee, frozen):
+    # Default cutoff 23:59 - an evening dash through the dashboard does not
+    # close the day's sessions an hour early.
+    record = context.attendance.time_in(employee, frozen.at(6, 0))
+    context.settings.set("auto_close_missing_timeout", True, "admin")
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(23, 0)) == 0
+    assert context.repositories.attendance.get(record.attendance_id).status == "open"
+
+
+def test_late_clock_in_is_cut_off_the_next_day(context, admin, employee, frozen):
+    context.settings.set("auto_close_missing_timeout", True, "admin")
+    context.settings.set("auto_close_time", "22:00", "admin")
+    # Clocked the session in after the cutoff, so its deadline is the next
+    # day's cutoff, not the same night.
+    record = context.attendance.time_in(employee, frozen.at(23, 0))
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(22, 0, day_offset=1)) == 0
+    assert context.attendance.auto_close_missing_timeouts(frozen.at(22, 30, day_offset=1)) == 1
+    updated = context.repositories.attendance.get(record.attendance_id)
+    assert updated.time_out == frozen.iso(22, 0, day_offset=1)
+    assert updated.duration_minutes == 23 * 60
+
+
+def test_a_scan_the_next_morning_closes_yesterday(context, admin, employee, frozen):
+    from app.constants import QR_TIME_IN
+
+    context.settings.set("auto_close_missing_timeout", True, "admin")
+    context.settings.set("auto_close_time", "23:59", "admin")
+    stale = context.attendance.time_in(employee, frozen.at(9, 0))
+    frozen.advance(days=1)   # Tuesday: yesterday was left open overnight
+
+    context.attendance.record_scan(
+        employee, QR_TIME_IN, "scan-next-morning", moment=frozen.at(9, 0)
+    )
+    old = context.repositories.attendance.get(stale.attendance_id)
+    assert old.status == "closed"
+    assert old.duration_minutes == 14 * 60 + 59   # 09:00 -> 23:59
+    fresh = context.attendance.record_for_today(employee)
+    assert fresh.attendance_id != stale.attendance_id
+    assert fresh.status == "open"
+
+
+def test_without_the_rule_a_stale_session_still_blocks_the_next_morning(
+    context, admin, employee, frozen
+):
+    from app.constants import QR_TIME_IN
+
+    from app.services.attendance_service import ERR_SESSION_CONFLICT, ClockError
+
+    # Today, without the rule, the forgotten session is a hard stop that
+    # needs an administrator to clear before anyone can scan again.
+    stale = context.attendance.time_in(employee, frozen.at(9, 0))
+    frozen.advance(days=1)
+    with pytest.raises(ClockError) as raised:
+        context.attendance.record_scan(
+            employee, QR_TIME_IN, "blocked-next-morning", moment=frozen.at(9, 0)
+        )
+    assert raised.value.code == ERR_SESSION_CONFLICT
+    assert context.repositories.attendance.get(stale.attendance_id).status == "open"
+
+
+def test_building_the_dashboard_closes_forgotten_sessions(context, admin, employee, frozen):
+    context.settings.set("auto_close_missing_timeout", True, "admin")
+    context.settings.set("auto_close_time", "23:59", "admin")
+    stale = context.attendance.time_in(employee, frozen.at(9, 0))
+    frozen.advance(days=1)
+
+    context.attendance.dashboard()
+    assert context.repositories.attendance.get(stale.attendance_id).status == "closed"
 
 
 def test_early_time_in_flag(context, admin, employee, frozen):

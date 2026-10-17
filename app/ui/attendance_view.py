@@ -391,8 +391,9 @@ class AttendancePage(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
 
         note = QLabel(
-            "Sessions that were opened but never closed. Close them here or let the "
-            "auto-close rule in Settings handle them (both are audited)."
+            "Sessions that were opened but never closed. Close them here by "
+            "hand, or turn on auto time-out in Settings and this list clears "
+            "itself at the time you pick (both ways are audited)."
         )
         note.setWordWrap(True)
         note.setObjectName("CardHint")

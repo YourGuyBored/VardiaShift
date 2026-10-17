@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Callable
 
 from app.constants import QR_TIME_IN, QR_TIME_OUT
@@ -47,7 +47,7 @@ VALID_SOURCES = ("qr", "manual", "auto", "correction", "phone")
 SOURCE_LABELS = {
     "qr": "Desktop",
     "manual": "Desktop",
-    "auto": "Desktop",
+    "auto": "Auto time-out",
     "correction": "Admin correction",
     "phone": "Phone",
 }
@@ -442,6 +442,14 @@ class AttendanceService:
         with self._lock_for(employee.employee_id):
             self._reject_duplicate_scan(payload_text, kind, moment, employee.employee_id)
 
+            # Housekeeping while the app is in use: yesterday's forgotten
+            # sessions close the next time anyone scans, so the new scan
+            # lands on clean data. Never fires when the rule is off.
+            try:
+                self.auto_close_missing_timeouts(moment)
+            except Exception:  # pragma: no cover - scanning must not stall
+                pass
+
             if kind == QR_TIME_IN:
                 result = self.time_in(employee, moment, source=source)
             elif kind == QR_TIME_OUT:
@@ -590,6 +598,10 @@ class AttendanceService:
         start, end = window.start.strftime("%Y-%m-%d"), window.end.strftime("%Y-%m-%d")
 
         self.refresh_missing_timeouts(now)
+        try:
+            self.auto_close_missing_timeouts(now)
+        except Exception:  # pragma: no cover - the dashboard still draws
+            pass
 
         employees = self.repos.employees.list_all(status="active")
         rows: list[EmployeeToday] = []
@@ -691,22 +703,49 @@ class AttendanceService:
                 flagged += 1
         return flagged
 
+    def auto_close_deadline(self, time_in: datetime, moment: datetime) -> datetime:
+        """The instant a session started at ``time_in`` should switch itself off.
+
+        The configured daily moment on the day the session began; an
+        overnight session clocked in after that moment is cut off the next
+        day at the same time instead of the same night.
+        """
+        try:
+            cutoff = self.clock.parse_time_of_day(self.settings.settings.auto_close_time)
+        except (ValueError, AttributeError):
+            cutoff = time(hour=23, minute=59)
+        deadline = time_in.replace(hour=cutoff.hour, minute=cutoff.minute, second=0, microsecond=0)
+        if deadline <= time_in:
+            deadline += timedelta(days=1)
+        return deadline
+
     def auto_close_missing_timeouts(self, moment: datetime | None = None) -> int:
-        """Optionally close forgotten sessions, always with an audit entry."""
+        """Close forgotten sessions at the configured daily time, audited.
+
+        Runs again wherever the app looks at attendance, so an overnight
+        session left open yesterday is closed the next time codes are scanned
+        or the dashboard is opened - even if VardiaShift was shut off at the
+        cutoff moment. Returns the number of sessions closed now.
+        """
         if not self.settings.settings.auto_close_missing_timeout:
             return 0
         now = moment or self.now()
-        limit = now - timedelta(minutes=self.settings.settings.auto_close_after_minutes)
-        cutoff = TimeUtils.to_iso(limit)
+        clock = self.clock
         closed = 0
-        for record in self.repos.attendance.stale_open_sessions(cutoff):
-            minutes = TimeUtils.elapsed_minutes(TimeUtils.parse(record.time_in) or now, limit)
+        for record in self.repos.attendance.open_sessions():
+            time_in = TimeUtils.parse(record.time_in) if record.time_in else None
+            if time_in is None:
+                continue
+            deadline = self.auto_close_deadline(time_in, now)
+            if now <= deadline:
+                continue
+            minutes = TimeUtils.elapsed_minutes(time_in, deadline)
             note = (
-                f"Auto-closed after {self.settings.settings.auto_close_after_minutes / 60:g} h "
-                "(missing time-out rule)"
+                f"Auto time-out at {clock.format_time(deadline.isoformat())} "
+                "(no time-out was scanned; for review)"
             )
             self.repos.attendance.close_session(
-                record.attendance_id, TimeUtils.to_iso(limit), minutes, note, "auto"
+                record.attendance_id, TimeUtils.to_iso(deadline), minutes, note, "auto"
             )
             self.repos.audit.log(
                 ACTION_AUTO_CLOSE,
@@ -718,7 +757,7 @@ class AttendanceService:
                     f"- no time-out was scanned"
                 ),
                 old_value=f"Time Out: None (open since {record.time_in})",
-                new_value=f"Time Out: {TimeUtils.to_iso(limit)} ({minutes} min)",
+                new_value=f"Time Out: {TimeUtils.to_iso(deadline)} ({minutes} min)",
                 reason=note,
                 severity=SEVERITY_WARNING,
             )
