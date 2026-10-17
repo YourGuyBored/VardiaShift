@@ -238,7 +238,8 @@ class _Server(ThreadingHTTPServer):
 
     On Windows the semantics are the opposite. There, ``SO_REUSEADDR`` lets a
     *second* socket bind to a port that is already being listened on, so two
-    Shiftora instances would both report success on the same port and requests
+    VardiaShift instances would both report success on the same port and
+    requests
     would be split unpredictably between them. ``SO_EXCLUSIVEADDRUSE`` is the
     Windows option that actually prevents another process from sharing the
     port, so it is set instead, before the bind.
