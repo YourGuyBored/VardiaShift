@@ -641,10 +641,13 @@ VardiaShift is being built out in stages. Roughly in order:
   (no late/absent flags, nothing to patch).
 * Optional break tracking between time-in and time-out.
 * Holiday calendars and overtime multipliers, surfaced in reports.
-* Bulk employee import from a CSV or spreadsheet, with a downloadable
-  template, validation and a preview before anything is written.
+* ~~Bulk employee import from a CSV or spreadsheet, with a downloadable
+  template, validation and a preview before anything is written~~ done:
+  the Import from file button on the Employees page.
 * More dashboard charts: weekly hours trend, lateness patterns, hours by
   department.
+* ~~More dashboard charts~~ done: the chart card switches between hours
+  by day, late arrivals this week, and recorded hours by department.
 * Payroll export: hours per pay period per employee as CSV/XLSX.
 * Print-ready PDF reports (daily, weekly, monthly, per employee).
 * A read-only "Viewer" account type that can see the dashboard and reports

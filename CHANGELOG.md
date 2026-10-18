@@ -7,6 +7,16 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **More dashboard charts**: the chart card now has a switcher. Alongside
+  the hours-per-day bars there are two new views: Late arrivals counts the
+  scans that came in past that day's schedule plus the grace period per
+  day of the week (approved leave never counts), and By department shows
+  the current work week's recorded hours per department, with the smaller
+  departments grouping into one bar so labels stay readable. The whole
+  card (title, hint, bars and totals line) changes with the switch.
+  Files: `app/services/attendance_service.py`, `app/ui/dashboard.py`,
+  `tests/test_lateness.py`, `tests/test_dashboard_chart.py`.
+
 * **Leave tracking**: record approved time off per employee. A Leave button
   on the Employees page opens every day an employee is excused, along with
   the kind (sick, vacation, holiday, other) and an optional note. A leave

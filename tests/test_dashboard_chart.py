@@ -119,3 +119,64 @@ def test_dashboard_labels_match_the_current_week(context, qt_app, admin):
     expected = [clock.day_name(day)[:3] for day in clock.date_range(window.start, window.end)]
     assert page._chart._labels == expected
     page.deleteLater()
+
+
+# -- the switcher ------------------------------------------------------------
+def test_the_chart_card_switches_views(context, qt_app, admin, frozen):
+    from app.ui.dashboard import DashboardPage
+
+    context.settings.set("default_shift_start", "09:00", "admin")
+    employee = context.employees.create("EMP-001", "Juan Dela Cruz", department="IT", admin_username="admin")
+    context.attendance.time_in(employee, frozen.at(9, 30))
+
+    page = DashboardPage(context)
+    assert page._chart_title.text() == "This week's hours"
+    assert "Daily average" in page._chart_legend.text()
+
+    page._chart_view.setCurrentIndex(1)
+    assert page._chart_title.text() == "Late arrivals (this week)"
+    assert sum(page._chart._values) == 1
+    assert "late arrival" in page._chart_legend.text().lower()
+
+    page._chart_view.setCurrentIndex(2)
+    assert page._chart_title.text() == "Hours by department (this week)"
+    assert page._chart._labels[-1].startswith("IT")
+    assert "department(s)" in page._chart_legend.text()
+    page.deleteLater()
+
+
+def test_many_departments_share_one_bar(context, qt_app, admin, frozen):
+    from app.ui.dashboard import DashboardPage
+
+    codes = ["Finance", "Marketing", "Operations", "Sales", "Legal", "Design", "QA"]
+    for index, code in enumerate(codes, start=1):
+        context.employees.create(
+            f"EMP-{index:03d}", f"Person {index}", department=code, admin_username="admin"
+        )
+        emp = context.employees.get_by_code(f"EMP-{index:03d}")
+        context.attendance.time_in(emp, frozen.at(9, 0))
+        context.attendance.time_out(emp, frozen.at(10, 0))
+
+    page = DashboardPage(context)
+    page._chart_view.setCurrentIndex(2)
+    # Five named bars plus one shared "Other": a plot cannot read ten thin ones.
+    assert len(page._chart._values) == 6
+    assert page._chart._labels[-1] == "Other"
+    page.deleteLater()
+
+
+def test_the_department_chart_merges_staff_without_one(context, qt_app, admin, frozen):
+    from app.ui.dashboard import DashboardPage
+
+    with_dept = context.employees.create("EMP-001", "Juan Dela Cruz", department="IT", admin_username="admin")
+    without = context.employees.create("EMP-002", "Maria Santos", admin_username="admin")
+    for emp in (with_dept, without):
+        context.attendance.time_in(emp, frozen.at(9, 0))
+        context.attendance.time_out(emp, frozen.at(10, 0))
+
+    page = DashboardPage(context)
+    page._chart_view.setCurrentIndex(2)
+    labels = page._chart._labels
+    assert "IT" in labels and labels[-1].startswith("No depa")
+    assert len(labels) == 2
+    page.deleteLater()

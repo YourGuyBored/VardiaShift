@@ -21,6 +21,7 @@ from app.models.attendance import ATTENDANCE_MISSING, ATTENDANCE_OPEN
 from app.services import sample_data
 from app.ui import theme
 from app.ui.widgets import (
+    Select,
     BarChart,
     Card,
     EmptyState,
@@ -36,6 +37,13 @@ from app.ui.widgets import (
 )
 
 COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Schedule", "Today", "This Week", "Goal", "Source"]
+
+#: The chart card's views: (view key, switcher label, card title).
+CHART_VIEWS = [
+    ("hours", "Hours", "This week's hours"),
+    ("late", "Late arrivals", "Late arrivals (this week)"),
+    ("department", "By department", "Hours by department (this week)"),
+]
 
 
 class DashboardPage(QWidget):
@@ -59,7 +67,28 @@ class DashboardPage(QWidget):
         body = QHBoxLayout()
         body.setSpacing(16)
 
-        self._trend_card = Card("This week's hours", "Each bar is one day of the current work week.")
+        # One shared bar chart, three views. A switcher beats three side by
+        # side cards: the dashboard keeps its height, and the widgets keep
+        # one paint path each.
+        self._trend_card = Card("", "")
+        chart_header = QHBoxLayout()
+        chart_header.setSpacing(theme.SPACING_S)
+        self._chart_title = QLabel(CHART_VIEWS[0][2])
+        self._chart_title.setObjectName("CardTitle")
+        chart_header.addWidget(self._chart_title)
+        chart_header.addStretch(1)
+        self._chart_view = Select()
+        for value, label, _title in CHART_VIEWS:
+            self._chart_view.addItem(label, value)
+        self._chart_view.currentIndexChanged.connect(self.refresh)
+        self._chart_view.setToolTip("Switch the whole chart card between views")
+        chart_header.addWidget(self._chart_view)
+        self._trend_card.add_layout(chart_header)
+        self._chart_hint = QLabel("Each bar is one day of the current work week.")
+        self._chart_hint.setObjectName("CardHint")
+        self._chart_hint.setWordWrap(True)
+        self._trend_card.add(self._chart_hint)
+
         self._chart = BarChart()
         self._trend_card.add(self._chart)
         self._chart_legend = QLabel("")
@@ -284,6 +313,15 @@ class DashboardPage(QWidget):
         self._populate(summary)
 
     def _update_chart(self, summary) -> None:
+        view = self._chart_view.currentData()
+        if view == "late":
+            self._show_late_chart()
+        elif view == "department":
+            self._show_department_chart(summary)
+        else:
+            self._show_hours_chart()
+
+    def _show_hours_chart(self) -> None:
         clock = self.context.clock
         window = clock.week_bounds()
         days = clock.date_range(window.start, window.end)
@@ -298,6 +336,8 @@ class DashboardPage(QWidget):
             round(by_day.get(day.strftime("%Y-%m-%d"), 0) / 60.0, 2) for day in days
         ]
         labels = [clock.day_name(day)[:3] for day in days]
+        self._chart_title.setText(CHART_VIEWS[0][2])
+        self._chart_hint.setText("Each bar is one day of the current work week.")
         self._chart.set_data(values, labels, 0.0)
         peak = max(values) if values else 0.0
         total = sum(values)
@@ -309,6 +349,56 @@ class DashboardPage(QWidget):
                 if peak
                 else ""
             )
+        )
+
+    def _show_late_chart(self) -> None:
+        clock = self.context.clock
+        window = clock.week_bounds()
+        days = clock.date_range(window.start, window.end)
+        late = self.context.attendance.lateness_by_day(window.start, window.end)
+        values = [late.get(day.strftime("%Y-%m-%d"), 0) for day in days]
+        labels = [clock.day_name(day)[:3] for day in days]
+        self._chart_title.setText(CHART_VIEWS[1][2])
+        self._chart_hint.setText(
+            "Each bar counts the scans that came in past that day's schedule "
+            "plus the grace period. Approved leave never counts."
+        )
+        self._chart.set_data(values, labels, 0.0)
+        total = sum(values)
+        if total:
+            worst = max(values)
+            worst_label = labels[values.index(worst)]
+            self._chart_legend.setText(
+                f"{total} late arrival(s)  •  Worst day {worst_label} ({worst})"
+            )
+        else:
+            self._chart_legend.setText("Nobody ran past their schedule this week.")
+
+    def _show_department_chart(self, summary) -> None:
+        clock = self.context.clock
+        totals: dict[str, float] = {}
+        for row in summary.rows:
+            name = (row.employee.department or "").strip() or "No department"
+            totals[name] = totals.get(name, 0.0) + row.week_minutes / 60.0
+        ranked = sorted(totals.items(), key=lambda entry: entry[1], reverse=True)
+        # The plot cannot read ten skinny bars; smaller departments share one.
+        if len(ranked) > 6:
+            ranked = ranked[:5] + [("Other", sum(v for _, v in ranked[5:]))]
+        labels = [
+            name if len(name) <= 8 else name[:7] + "…"
+            for name, _ in ranked
+        ]
+        values = [round(value, 2) for _, value in ranked]
+        self._chart_title.setText(CHART_VIEWS[2][2])
+        self._chart_hint.setText(
+            "Each bar is one department's recorded hours for the current "
+            "work week. Employees without a department share the last bar."
+        )
+        self._chart.set_data(values, labels, 0.0)
+        total = sum(values)
+        self._chart_legend.setText(
+            f"{clock.format_duration(int(total * 60))} across the week  •  "
+            f"{len(totals)} department(s)"
         )
 
     def _populate(self, summary) -> None:

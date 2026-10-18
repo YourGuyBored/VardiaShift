@@ -776,6 +776,55 @@ class AttendanceService:
                 issues.append(f"Early out {clock.short_duration(short)}")
         return issues
 
+    def lateness_by_day(self, start: date, end: date) -> dict[str, int]:
+        """Late first scans per day across the whole crew.
+
+        A record counts as late when its time-in runs past that day's
+        schedule plus the grace period - the same rule the tardiness report
+        applies. Approved leave excuses the day, and an employee without an
+        assignment is measured against the organisation shift. Everything
+        is resolved in one pass of bulk reads, so the dashboard can call it
+        on every repaint.
+        """
+        clock = self.clock
+        if end < start:
+            start, end = end, start
+        start_key = start.strftime("%Y-%m-%d")
+        end_key = end.strftime("%Y-%m-%d")
+        grace = self.settings.settings.grace_period_minutes
+
+        records = self.repos.attendance.list_for_range(start_key, end_key)
+        if not records:
+            return {}
+        on_leave = set(self.repos.leave.for_range(start_key, end_key).keys())
+        own = {int(row["shift_id"]): row for row in self.repos.shifts.list_all()}
+        assignments = self.repos.shifts.assignments_map()
+        organiser = self.organisation_shift()
+
+        late: dict[str, int] = {}
+        for record in records:
+            if not record.time_in:
+                continue
+            key = record.work_date
+            try:
+                day = date.fromisoformat(key)
+            except ValueError:
+                continue
+            if (record.employee_id, key) in on_leave:
+                continue
+            assigned_row = own.get(assignments.get(record.employee_id, -1))
+            if assigned_row is not None:
+                shift = Shift.from_row(assigned_row)
+                if not shift.covers(day):
+                    continue
+            else:
+                shift = organiser
+            window_start, _ = scheduled_window(shift, day)
+            time_in = TimeUtils.parse(record.time_in)
+            if time_in is not None and time_in > window_start + timedelta(minutes=grace):
+                late[key] = late.get(key, 0) + 1
+        return late
+
     def _schedule_text(self, employee, record, now: datetime, shift: Shift | None) -> str:
         """One dashboard cell: the day's schedule verdict or "-"."""
         if shift is None:
