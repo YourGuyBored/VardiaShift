@@ -284,6 +284,12 @@ folder of the app data directory, one folder per working day. A scan without
 a live camera simply prints without a photo, and photos never leave the
 computer.
 
+**Language** - *Kiosk language* in Settings → Kiosk switches the kiosk
+screen between **English** and **Filipino**. Employees see the prompts, the
+time-in and time-out confirmations and the error messages in their language,
+straight away; names, employee codes and the clock format stay as they are.
+The administrator screens stay in English.
+
 Leaving the kiosk requires the administrator password (Exit kiosk button
 or the window close button) - employees cannot reach the admin screens from
 it. Quitting VardiaShift itself always works without a password.
@@ -679,6 +685,9 @@ VardiaShift is being built out in stages. Roughly in order:
 * ~~Optional kiosk photo on every scan (off by default, kept locally)~~ done:
   the Save camera photo on scan setting in Settings → Kiosk, saved under the
   app data folder's photos directory.
+* ~~An English / Filipino language toggle~~ done: Kiosk language in
+  Settings → Kiosk; the employee-facing kiosk screen renders in either.
+  The administrator screens stay in English.
 
 Further out and only ever optional: a read-only web view served by the
 phone service, and sync between computers. Keeping data on your own machine

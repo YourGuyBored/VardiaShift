@@ -35,6 +35,12 @@ from app.constants import QR_TIME_IN, QR_TIME_OUT
 from app.models.attendance import AttendanceStatus
 from app.services.attendance_service import ClockError
 from app.ui import theme
+from app.utils.language import (
+    kiosk_greeting,
+    kiosk_remaining_line,
+    kiosk_text,
+    kiosk_week_line,
+)
 from app.ui.widgets import Card, PrimaryButton, Select
 from app.ui.window_sizing import (
     fit_to_screen,
@@ -208,7 +214,7 @@ class KioskWindow(QMainWindow):
         top.addLayout(layout_title, 0)
         layout.addLayout(top)
 
-        self._status = QLabel("Scan your employee QR code to begin")
+        self._status = QLabel(self._tr("Scan your employee QR code to begin"))
         self._status.setObjectName("HeroSub")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
@@ -234,7 +240,7 @@ class KioskWindow(QMainWindow):
 
         layout.addSpacing(theme.SPACING_S)
 
-        self._prompt = QLabel("SCAN YOUR EMPLOYEE QR CODE")
+        self._prompt = QLabel(self._tr("SCAN YOUR EMPLOYEE QR CODE"))
         self._prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._prompt.setWordWrap(True)
         self._prompt.setMinimumHeight(_PROMPT_MINIMUM_HEIGHT)
@@ -242,15 +248,19 @@ class KioskWindow(QMainWindow):
         layout.addWidget(self._prompt)
 
         hint = QLabel(
-            "1. Scan your personal employee QR code\n"
-            "2. Then scan the TIME IN or TIME OUT code"
+            self._tr(
+                "1. Scan your personal employee QR code\n"
+                "2. Then scan the TIME IN or TIME OUT code"
+            )
         )
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setWordWrap(True)
         hint.setProperty("role", "hint")
         layout.addWidget(hint)
 
-        self._fallback_button = QPushButton("Having trouble? Enter ID manually")
+        self._fallback_button = QPushButton(
+            self._tr("Having trouble? Enter ID manually")
+        )
         self._fallback_button.setCursor(Qt.CursorShape.PointingHandCursor)
         theme.variant(self._fallback_button, "ghost")
         self._fallback_button.clicked.connect(self._manual_pick)
@@ -286,7 +296,7 @@ class KioskWindow(QMainWindow):
         card = Card("", "")
         layout = card.body()
 
-        self._result_title = QLabel("Ready")
+        self._result_title = QLabel(self._tr("Ready"))
         self._result_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_title.setObjectName("PageTitle")
         self._result_title.setWordWrap(True)
@@ -308,7 +318,7 @@ class KioskWindow(QMainWindow):
         divider.setObjectName("Divider")
         layout.addWidget(divider)
 
-        self._result_details = QLabel("Waiting for a scan")
+        self._result_details = QLabel(self._tr("Waiting for a scan"))
         self._result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_details.setWordWrap(True)
         self._result_details.setObjectName("CardHint")
@@ -316,7 +326,7 @@ class KioskWindow(QMainWindow):
 
         layout.addStretch(1)
 
-        self._reset_button = PrimaryButton("Scan again", self.reset)
+        self._reset_button = PrimaryButton(self._tr("Scan again"), self.reset)
         layout.addWidget(self._reset_button)
         return card
 
@@ -328,7 +338,9 @@ class KioskWindow(QMainWindow):
         layout.setSpacing(theme.SPACING_S)
 
         self._footer_hint = QLabel(
-            "A USB QR reader works straight away - just scan and press Enter."
+            self._tr(
+                "A USB QR reader works straight away - just scan and press Enter."
+            )
         )
         self._footer_hint.setStyleSheet(
             f"color: {theme.ACCENT_LIGHT}; font-size: 12px;"
@@ -336,7 +348,7 @@ class KioskWindow(QMainWindow):
         layout.addWidget(self._footer_hint)
         layout.addStretch(1)
 
-        admin = QPushButton("Exit kiosk")
+        admin = QPushButton(self._tr("Exit kiosk"))
         admin.setCursor(Qt.CursorShape.PointingHandCursor)
         theme.variant(admin, "on-dark")
         admin.setToolTip("Requires the administrator password.")
@@ -345,23 +357,31 @@ class KioskWindow(QMainWindow):
         return footer
 
     # -- scanner -------------------------------------------------------------
+    def _tr(self, text: str) -> str:
+        """Kiosk language lookup, read live so a setting change reaches it."""
+        return kiosk_text(text, self.context.settings.settings.kiosk_language)
+
     def _install_scanner(self) -> None:
         from app.qr.scanner import OPENCV_AVAILABLE, KeyboardWedgeFilter
 
         self._wedge = KeyboardWedgeFilter(self.handle_scan)
-        self._camera_combo.addItem("Auto-detect", None)
+        self._camera_combo.addItem(self._tr("Auto-detect"), None)
 
         if not OPENCV_AVAILABLE:
             self._camera_button.setEnabled(False)
-            self._camera_button.setText("Camera unavailable")
+            self._camera_button.setText(self._tr("Camera unavailable"))
             self._camera_button.setToolTip(
-                "This build has no webcam support. A USB QR reader works "
-                "normally, or use manual entry."
+                self._tr(
+                    "This build has no webcam support. A USB QR reader works "
+                    "normally, or use manual entry."
+                )
             )
             self._camera_combo.setEnabled(False)
             self._camera_hint.setText(
-                "Camera scanning is unavailable in this build. A USB QR reader works "
-                "normally, or use manual entry."
+                self._tr(
+                    "Camera scanning is unavailable in this build. A USB QR "
+                    "reader works normally, or use manual entry."
+                )
             )
             self._camera = None
         else:
@@ -444,15 +464,17 @@ class KioskWindow(QMainWindow):
         """Offer every camera that answered, keeping the auto-detect entry."""
         current = self._camera_combo.currentData()
         self._camera_combo.clear()
-        self._camera_combo.addItem("Auto-detect", None)
+        self._camera_combo.addItem(self._tr("Auto-detect"), None)
         for index in indices:
             self._camera_combo.addItem(f"Camera {index}", index)
         position = self._camera_combo.findData(current)
         self._camera_combo.setCurrentIndex(position if position >= 0 else 0)
         if not indices:
             self._camera_hint.setText(
-                "No camera detected. Connect a USB webcam, then press Start camera - "
-                "a USB QR reader works without one."
+                self._tr(
+                    "No camera detected. Connect a USB webcam, then press "
+                    "Start camera - a USB QR reader works without one."
+                )
             )
 
     def _selected_camera(self) -> int | None:
@@ -465,7 +487,7 @@ class KioskWindow(QMainWindow):
             return
         if self._camera.running:
             self._camera.stop()
-            self._camera_button.setText("Start camera")
+            self._camera_button.setText(self._tr("Start camera"))
             self._camera_hint.setText("Camera stopped.")
         else:
             # Opening a device and waiting for its first frame takes a moment,
@@ -476,10 +498,11 @@ class KioskWindow(QMainWindow):
                 ok, message = self._camera.start(self._selected_camera())
             finally:
                 QApplication.restoreOverrideCursor()
-            self._camera_button.setText("Stop camera" if ok else "Start camera")
+            self._camera_button.setText(
+                self._tr("Stop camera") if ok else self._tr("Start camera")
+            )
             self._camera_hint.setText(message)
 
-    # -- scan photos (opt-in) -------------------------------------------------
     def _remember_frame(self, image) -> None:
         """Keep the newest camera frame so the next scan can be photographed."""
         self._last_frame = image
@@ -532,13 +555,13 @@ class KioskWindow(QMainWindow):
         """
         if self._camera is not None:
             self._camera.stop()
-        self._camera_button.setText("Retry camera")
+        self._camera_button.setText(self._tr("Retry camera"))
         self._camera_hint.setText(
             f"{message} The USB scanner and manual entry still work - "
             "press 'Retry camera' to try the webcam again."
         )
         self._status.setText(
-            "Camera unavailable - use the USB scanner or manual entry."
+            self._tr("Camera unavailable - use the USB scanner or manual entry.")
         )
 
     # -- public API ----------------------------------------------------------
@@ -594,12 +617,12 @@ class KioskWindow(QMainWindow):
         self._state = STATE_IDLE
         self._reset_timer.stop()
 
-        self._status.setText("Scan your employee QR code to begin")
-        self._set_prompt("SCAN YOUR EMPLOYEE QR CODE", "idle")
-        self._set_result_title("Ready", theme.TEXT_MUTED)
+        self._status.setText(self._tr("Scan your employee QR code to begin"))
+        self._set_prompt(self._tr("SCAN YOUR EMPLOYEE QR CODE"), "idle")
+        self._set_result_title(self._tr("Ready"), theme.TEXT_MUTED)
         self._result_name.setText("")
         self._result_meta.setText("")
-        self._result_details.setText("Waiting for a scan")
+        self._result_details.setText(self._tr("Waiting for a scan"))
 
     def handle_scan(self, payload: str) -> None:
         """Entry point for every scanner type."""
@@ -611,7 +634,7 @@ class KioskWindow(QMainWindow):
         try:
             self._dispatch(text)
         except Exception as exc:  # pragma: no cover - defensive
-            self._show_error("Scan error", str(exc))
+            self._show_error(self._tr("Scan error"), str(exc))
 
     def _dispatch(self, text: str) -> None:
         context = self.context
@@ -623,7 +646,7 @@ class KioskWindow(QMainWindow):
                 text
             ) or context.employees.get_by_badge_code(text)
             if employee is None:
-                self._show_error("Unknown employee", f"No employee matches '{text}'.")
+                self._show_error(self._tr("Unknown employee"), f"No employee matches '{text}'.")
                 return
             self._employee = employee
             if context.settings.settings.auto_clock_mode:
@@ -636,7 +659,7 @@ class KioskWindow(QMainWindow):
             try:
                 self._employee = context.qr.resolve_employee(text)
             except ValueError as exc:
-                self._show_error("Not an employee code", str(exc))
+                self._show_error(self._tr("Not an employee code"), str(exc))
                 return
             if context.settings.settings.auto_clock_mode:
                 self._perform_auto_clock(text)
@@ -647,7 +670,7 @@ class KioskWindow(QMainWindow):
         try:
             kind, _token = context.qr.resolve_action(text)
         except ValueError as exc:
-            self._show_error("Wrong code", str(exc))
+            self._show_error(self._tr("Wrong code"), str(exc))
             self._employee = None
             return
 
@@ -658,10 +681,10 @@ class KioskWindow(QMainWindow):
         clock = self.context.clock
         self._state = STATE_EMPLOYEE
         self._status.setText(
-            f"Hello, {employee.full_name}! Now scan the TIME IN or TIME OUT code."
+            kiosk_greeting(employee.full_name, self.context.settings.settings.kiosk_language)
         )
-        self._set_prompt("SCAN TIME IN / TIME OUT", "employee")
-        self._set_result_title("Employee confirmed", theme.SUCCESS)
+        self._set_prompt(self._tr("SCAN TIME IN / TIME OUT"), "employee")
+        self._set_result_title(self._tr("Employee confirmed"), theme.SUCCESS)
         self._result_name.setText(employee.full_name)
         self._result_meta.setText(
             f"{employee.employee_code}"
@@ -677,12 +700,12 @@ class KioskWindow(QMainWindow):
         """Single-scan clocking: out when working, in otherwise."""
         employee = self._employee
         if employee is None:
-            self._show_error("Scan again", "Scan your employee QR code first.")
+            self._show_error(self._tr("Scan again"), self._tr("Scan your employee QR code first."))
             return
         try:
             result = self.context.attendance.record_auto_scan(employee, payload)
         except ClockError as exc:
-            self._show_error(exc.title or "Cannot record", exc.message)
+            self._show_error(self._tr(exc.title) if exc.title else self._tr("Cannot record"), exc.message)
             self._employee = None
             self._reset_timer.start(2500)
             return
@@ -702,19 +725,19 @@ class KioskWindow(QMainWindow):
     def _perform_clock(self, kind: str, payload: str = "") -> None:
         employee = self._employee
         if employee is None:
-            self._show_error("Scan again", "Scan your employee QR code first.")
+            self._show_error(self._tr("Scan again"), self._tr("Scan your employee QR code first."))
             return
         try:
             result = self.context.attendance.record_scan(
                 employee, kind, payload or f"{kind}:{employee.employee_id}"
             )
         except ClockError as exc:
-            self._show_error(exc.title or "Cannot record", exc.message)
+            self._show_error(self._tr(exc.title) if exc.title else self._tr("Cannot record"), exc.message)
             self._employee = None
             self._reset_timer.start(2500)
             return
         except ValueError as exc:
-            self._show_error("Cannot record", str(exc))
+            self._show_error(self._tr("Cannot record"), str(exc))
             self._employee = None
             self._reset_timer.start(2500)
             return
@@ -724,9 +747,9 @@ class KioskWindow(QMainWindow):
 
     def _show_time_in_success(self, result) -> None:
         clock = self.context.clock
-        self._status.setText("Time in recorded")
-        self._set_prompt("TIME IN SUCCESSFUL", "time_in")
-        self._set_result_title("TIME IN SUCCESSFUL", theme.SUCCESS)
+        self._status.setText(self._tr("Time in recorded"))
+        self._set_prompt(self._tr("TIME IN SUCCESSFUL"), "time_in")
+        self._set_result_title(self._tr("TIME IN SUCCESSFUL"), theme.SUCCESS)
         self._result_name.setText(result.full_name)
         self._result_meta.setText(
             f"{result.employee_code}"
@@ -735,14 +758,15 @@ class KioskWindow(QMainWindow):
         self._result_details.setText(
             f"{clock.format_time(result.timestamp)}\n"
             f"{clock.format_long_date(result.timestamp)}\n\n"
-            "Have a productive day!"
+            + self._tr("Have a productive day!")
         )
 
     def _show_time_out_success(self, result) -> None:
         clock = self.context.clock
-        self._status.setText("Time out recorded")
-        self._set_prompt("TIME OUT SUCCESSFUL", "time_out")
-        self._set_result_title("TIME OUT SUCCESSFUL", theme.PRIMARY)
+        language = self.context.settings.settings.kiosk_language
+        self._status.setText(self._tr("Time out recorded"))
+        self._set_prompt(self._tr("TIME OUT SUCCESSFUL"), "time_out")
+        self._set_result_title(self._tr("TIME OUT SUCCESSFUL"), theme.PRIMARY)
         self._result_name.setText(result.full_name)
         self._result_meta.setText(
             f"{result.employee_code}"
@@ -751,17 +775,20 @@ class KioskWindow(QMainWindow):
         lines = [
             f"Time out: {clock.format_time(result.timestamp)}",
             "",
-            f"Today's work time",
+            self._tr("Today's work time"),
             clock.format_duration(result.session_minutes),
             "",
-            f"This week  {clock.format_duration(result.weekly_minutes)}"
-            f" / {clock.format_duration(result.weekly_goal_minutes)}"
-            f"  ({result.weekly_percent}%)",
+            kiosk_week_line(
+                clock.format_duration(result.weekly_minutes),
+                clock.format_duration(result.weekly_goal_minutes),
+                result.weekly_percent,
+                language,
+            ),
         ]
         if result.weekly_minutes >= result.weekly_goal_minutes:
             lines.append("")
             lines.append(
-                "Weekly goal reached!"
+                self._tr("Weekly goal reached!")
                 + (
                     f"  {clock.format_duration(result.overtime_minutes, always_sign=True)}"
                     if result.overtime_minutes
@@ -771,7 +798,9 @@ class KioskWindow(QMainWindow):
         else:
             lines.append("")
             lines.append(
-                f"Remaining: {clock.format_duration(result.remaining_minutes)}"
+                kiosk_remaining_line(
+                    clock.format_duration(result.remaining_minutes), language
+                )
             )
         self._result_details.setText("\n".join(lines))
 
@@ -793,7 +822,9 @@ class KioskWindow(QMainWindow):
 
         employees = self.context.employees.list(status="active")
         if not employees:
-            QMessageBox.information(self, "No employees", "Add employees first.")
+            QMessageBox.information(
+                self, self._tr("No employees"), self._tr("Add employees first.")
+            )
             return
         dialog = ManualEntryDialog(employees, self)
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.selected_employee is None:
@@ -875,7 +906,7 @@ class KioskExitDialog(QDialog):
     def __init__(self, context, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
-        self.setWindowTitle("Exit kiosk")
+        self.setWindowTitle(kiosk_text("Exit kiosk", context.settings.settings.kiosk_language))
         self.setModal(True)
         self.setMinimumWidth(380)
 
@@ -888,7 +919,10 @@ class KioskExitDialog(QDialog):
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
 
-        heading = QLabel("Administrator password needed")
+        def tr(text: str) -> str:
+            return kiosk_text(text, context.settings.settings.kiosk_language)
+
+        heading = QLabel(tr("Administrator password needed"))
         heading.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {theme.TEXT};")
         layout.addWidget(heading)
 

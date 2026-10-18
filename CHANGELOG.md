@@ -7,6 +7,18 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **English / Filipino kiosk language**: a *Kiosk language* choice in
+  Settings → Kiosk. The employee-facing kiosk screen - prompts, hints,
+  time-in and time-out confirmations, error titles and the manual-entry and
+  camera controls - renders in the chosen language, picking up changes at
+  the next scan or state change. Unknown strings fall back to English, so a
+  half-covered translation still reads sensibly. Names, employee codes and
+  clock formats are never translated, and the administrator screens stay
+  in English.
+  Files: `app/utils/language.py`, `app/models/settings.py`,
+  `app/ui/attendance_kiosk.py`, `tests/test_language.py`, `README.md`,
+  `CHANGELOG.md`.
+
 * **Optional kiosk photo on every scan**: a Kiosk setting (off by default)
   takes the camera's current picture at the moment of each recorded scan and
   files it under the app data folder's photos directory, one folder per

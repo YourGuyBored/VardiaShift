@@ -12,6 +12,12 @@ from app.constants import (
     WEEKLY_GOAL_PRESETS,
 )
 from app.utils.appearance import ACCENT_NAMES, DEFAULT_ACCENT, resolve as resolve_accent
+from app.utils.language import (
+    KIOSK_LANGUAGES,
+    LANGUAGE_ENGLISH,
+    LANGUAGE_FILIPINO,
+    language_label,
+)
 from app.utils.time_utils import (
     DATE_FORMAT_PRESETS,
     TIME_FORMAT_PRESETS,
@@ -235,6 +241,13 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "When the kiosk camera is running, a photo is taken at the moment of "
         "each scan and saved in the photos folder inside the app data "
         "directory. Off by default; photos never leave this computer.",
+    ),
+    SettingSpec(
+        "kiosk_language", "Kiosk language", TYPE_CHOICE,
+        language_label(LANGUAGE_ENGLISH), GROUP_KIOSK,
+        "The language employees see on the kiosk screen. Names, employee codes "
+        "and the clock stay as they are.",
+        choices=tuple(language_label(code) for code in KIOSK_LANGUAGES),
     ),
     # -- Phone attendance (local network) ------------------------------------
     SettingSpec(
@@ -497,6 +510,15 @@ class AppSettings:
     @property
     def kiosk_photo_on_scan(self) -> bool:
         return bool(self.get("kiosk_photo_on_scan"))
+
+    @property
+    def kiosk_language(self) -> str:
+        """Canonical language code for the kiosk screen."""
+        return (
+            LANGUAGE_FILIPINO
+            if str(self.get("kiosk_language") or "").casefold() == "filipino"
+            else LANGUAGE_ENGLISH
+        )
 
     @property
     def kiosk_auto_reset_seconds(self) -> int:
