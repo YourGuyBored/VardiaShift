@@ -583,6 +583,9 @@ class AttendancePage(QWidget):
         """
         try:
             day = date.fromisoformat(record.work_date)
+            leave = self.context.leave.on_date(record.employee_id, day)
+            if leave is not None:
+                return f"On leave ({leave.kind_label})"
             shift = self.context.attendance.scheduled_shift(record.employee_id, day)
             if shift is None:
                 return "Day off"

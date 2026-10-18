@@ -7,6 +7,18 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Leave tracking**: record approved time off per employee. A Leave button
+  on the Employees page opens every day an employee is excused, along with
+  the kind (sick, vacation, holiday, other) and an optional note. A leave
+  day stands the schedule down completely: no Late, Early out, No show,
+  Absent or short-hours flags, and nothing left to patch, while hours
+  still stay true to whatever was actually scanned. On the dashboard and
+  the attendance tables the day reads *On leave (Vacation)*, and the
+  tardiness report does the same, listing the day without any owed hours.
+  Every entry and removal is audited. Files: `app/models/leave.py`,
+  `app/services/leave_service.py`, `app/ui/leave_dialog.py`,
+  `tests/test_leave.py`.
+
 * **Shifts**: give a group of employees their own work times. Shifts are
   named schedules (a start, an end, and the days they cover) managed on a
   new Shifts page, and assigned on the employee form; anyone left on the

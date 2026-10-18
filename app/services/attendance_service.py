@@ -30,6 +30,7 @@ from app.models.audit import (
     SEVERITY_WARNING,
 )
 from app.models.employee import Employee, EmployeeStatus
+from app.models.leave import leave_label
 from app.models.shift import Shift, scheduled_window
 from app.services.settings_service import SettingsService
 from app.utils.time_utils import TimeUtils, WorkWeek
@@ -624,6 +625,7 @@ class AttendanceService:
         assignments = self.repos.shifts.assignments_map()
         own_shifts = {int(row["shift_id"]): row for row in self.repos.shifts.list_all()}
         org_shift = self.organisation_shift()
+        leaves_today = self.repos.leave.for_date(today_str)
         work_day = now.date()
 
         for employee in employees:
@@ -642,6 +644,9 @@ class AttendanceService:
             else:
                 shift = org_shift
             schedule_text = self._schedule_text(employee, record, now, shift)
+            leave_row = leaves_today.get(employee.employee_id)
+            if leave_row is not None:
+                schedule_text = f"On leave ({leave_label(leave_row['kind'])})"
 
             status = AttendanceStatus.NOT_IN
             missing_flag = False
@@ -740,6 +745,12 @@ class AttendanceService:
         if shift is None:
             shift = self.scheduled_shift(employee_id, day)
         if shift is None:
+            return []
+        # Approved leave stands the whole schedule down for that day,
+        # whatever the employee actually did (hours still record normally).
+        if self.repos.leave.on_date(
+            employee_id, day.strftime("%Y-%m-%d")
+        ) is not None:
             return []
         if record is None:
             record = self.repos.attendance.get_for_date(employee_id, day.strftime("%Y-%m-%d"))

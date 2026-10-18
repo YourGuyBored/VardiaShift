@@ -490,6 +490,11 @@ class ReportService:
         by_employee_day: dict[tuple[int, str], AttendanceRecord] = {
             (record.employee_id, record.work_date): record for record in records
         }
+        # Approved leave over the same window: (employee_id, date) -> kind.
+        leaves: dict[tuple[int, str], str] = {
+            key: row["kind"]
+            for key, row in self.repos.leave.for_range(start_key, end_key).items()
+        }
 
         rows: list[list] = []
         total_missing = 0
@@ -500,6 +505,7 @@ class ReportService:
                 row = self._tardiness_row(
                     day, record, self._day_schedule(schedules.get(employee.employee_id), organiser, day),
                     grace,
+                    leaves.get((employee.employee_id, key)),
                 )
                 rows.append(row)
                 patch = row[headers.index("Missing To Patch")]
@@ -519,7 +525,7 @@ class ReportService:
             (
                 f"Week {clock.format_date(week.start)} - {clock.format_date(week.end)}",
                 clock.format_duration(
-                    self._missing_over(employees, by_employee_day, week.start, week.end, grace, schedules, organiser)
+                    self._missing_over(employees, by_employee_day, week.start, week.end, grace, schedules, organiser, leaves)
                 ),
             )
         )
@@ -527,7 +533,7 @@ class ReportService:
             (
                 f"Month {month.start.strftime('%B %Y')}",
                 clock.format_duration(
-                    self._missing_over(employees, by_employee_day, month.start, month.end, grace, schedules, organiser)
+                    self._missing_over(employees, by_employee_day, month.start, month.end, grace, schedules, organiser, leaves)
                 ),
             )
         )
@@ -544,6 +550,7 @@ class ReportService:
                             grace=grace,
                             schedules=schedules,
                             organiser=organiser,
+                            leaves=leaves,
                         )
                     ),
                 )
@@ -579,6 +586,7 @@ class ReportService:
         grace: int,
         schedules: dict[int, Shift | None],
         organiser: Shift,
+        leaves: dict[tuple[int, str], str],
     ) -> int:
         """Hours still to patch across a window, summed per day."""
         clock = self.clock
@@ -591,6 +599,7 @@ class ReportService:
                     by_employee_day.get((employee.employee_id, key)),
                     self._day_schedule(schedules.get(employee.employee_id), organiser, day),
                     grace,
+                    leaves.get((employee.employee_id, key)),
                 )
                 patch = row[6]
                 if patch != "-":
@@ -611,14 +620,41 @@ class ReportService:
         record: AttendanceRecord | None,
         shift: Shift | None,
         grace: int,
+        leave_kind: str | None = None,
     ) -> list:
         """One day for one employee: the issue, and the hours it costs.
 
         ``shift`` is the resolved schedule for the day; None means a
         scheduled day off, which shows as its own line and costs nothing
-        to patch.
+        to patch. ``leave_kind`` is approved leave, which stands the whole
+        schedule down: no late, absent or short flags, and nothing owed -
+        whatever the person actually scanned is still shown as recorded.
         """
         clock = self.clock
+        time_in = TimeUtils.parse(record.time_in) if record and record.time_in else None
+        time_out = TimeUtils.parse(record.time_out) if record and record.time_out else None
+        if leave_kind is not None:
+            issues: list[str] = [f"On leave ({leave_kind.title()})"]
+            if record is not None and time_in is not None and time_out is None:
+                issues.append("Missing time-out")
+            return [
+                clock.format_date(day),
+                clock.format_time(record.time_in) if time_in else "-",
+                clock.format_time(record.time_out) if time_out else "-",
+                (
+                    clock.format_duration(
+                        TimeUtils.elapsed_minutes(time_in, time_out)
+                        if time_out
+                        else TimeUtils.elapsed_minutes(time_in, self._now())
+                    )
+                    if time_in and record
+                    else "-"
+                ),
+                "-",
+                "-",
+                "-",
+                "; ".join(issues),
+            ]
         if shift is None:
             return [
                 clock.format_date(day),
@@ -631,12 +667,9 @@ class ReportService:
                 "Day off",
             ]
         expected_minutes = shift.duration_minutes()
-        issues: list[str] = []
+        issues = []
         minutes = 0
         late_minutes = 0
-
-        time_in = TimeUtils.parse(record.time_in) if record and record.time_in else None
-        time_out = TimeUtils.parse(record.time_out) if record and record.time_out else None
 
         if time_in is not None:
             minutes = (

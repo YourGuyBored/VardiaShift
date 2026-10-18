@@ -446,6 +446,11 @@ class EmployeePage(QWidget):
         regen.setToolTip("Issue a new personal QR code (the old one stops working)")
         regen.clicked.connect(self._regenerate_qr)
 
+        leave = QPushButton("Leave")
+        leave.setCursor(Qt.CursorShape.PointingHandCursor)
+        leave.setToolTip("Approved time off: sick, vacation, holiday, other")
+        leave.clicked.connect(self._manage_leave)
+
         self._import_button = QPushButton("Import from file")
         self._import_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._import_button.setToolTip("Add or update employees from a CSV or XLSX file")
@@ -456,7 +461,7 @@ class EmployeePage(QWidget):
         sample.setToolTip("Save a CSV you can fill in and import")
         sample.clicked.connect(self._save_sample_file)
 
-        return [edit, view, self._toggle_button, regen, self._import_button, sample]
+        return [edit, view, leave, self._toggle_button, regen, self._import_button, sample]
 
     # -- import --------------------------------------------------------------
     def _save_sample_file(self) -> None:
@@ -530,6 +535,16 @@ class EmployeePage(QWidget):
             QMessageBox.information(self, "No selection", "Select an employee first.")
             return
         self.open_attendance.emit(employee.employee_id)
+
+    def _manage_leave(self) -> None:
+        employee = self.selected()
+        if employee is None:
+            QMessageBox.information(self, "No selection", "Select an employee first.")
+            return
+        from app.ui.leave_dialog import LeaveDialog
+
+        dialog = LeaveDialog(self.context, employee, self)
+        dialog.exec()
 
     def _toggle_status(self) -> None:
         employee = self.selected()

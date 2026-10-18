@@ -635,8 +635,10 @@ VardiaShift is being built out in stages. Roughly in order:
   no-show flags~~ done: named shifts on the Shifts page, assigned per
   employee, with Late, Early out, No show and Day off shown on the
   dashboard, the attendance tables and the tardiness report.
-* Leave tracking (sick, vacation, holiday, other) entered by an
-  administrator, so approved leave never counts against anyone.
+* ~~Leave tracking (sick, vacation, holiday, other) entered by an
+  administrator~~ done: a Leave button on each employee opens their
+  approved days off, and a leave day stands the whole schedule down
+  (no late/absent flags, nothing to patch).
 * Optional break tracking between time-in and time-out.
 * Holiday calendars and overtime multipliers, surfaced in reports.
 * Bulk employee import from a CSV or spreadsheet, with a downloadable
