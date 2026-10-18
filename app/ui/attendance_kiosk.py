@@ -12,6 +12,8 @@ be picked from a list instead (disabled in Settings > Attendance).
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QThread, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
@@ -139,6 +141,10 @@ class KioskWindow(QMainWindow):
         self._employee = None
         self._state = STATE_IDLE
         self._kiosk_mode = False
+        # The newest camera frame, kept only long enough to catch the scan
+        # that happens next (opt-in photo on scan).
+        self._last_frame = None
+        self._frame_seen_at = 0.0
         # Leaving the kiosk always passes the password gate; only a forced
         # close (application shutdown) bypasses it.
         self._exit_allowed = False
@@ -364,6 +370,10 @@ class KioskWindow(QMainWindow):
             self._camera = CameraScanner(self)
             self._camera.decoded.connect(self.handle_scan)
             self._camera.camera_error.connect(self._on_camera_error)
+            # Photos of scans (opt-in) come from the live camera feed. The
+            # newest frame is remembered; a scan that happens while the feed
+            # runs snaps that moment.
+            self._camera.frame_ready.connect(self._remember_frame)
             # The kiosk opens now; the list of cameras arrives when the
             # background probe finishes.
             self._camera_hint.setText("Start the camera to scan with a webcam.")
@@ -468,6 +478,50 @@ class KioskWindow(QMainWindow):
                 QApplication.restoreOverrideCursor()
             self._camera_button.setText("Stop camera" if ok else "Start camera")
             self._camera_hint.setText(message)
+
+    # -- scan photos (opt-in) -------------------------------------------------
+    def _remember_frame(self, image) -> None:
+        """Keep the newest camera frame so the next scan can be photographed."""
+        self._last_frame = image
+        self._frame_seen_at = time.monotonic()
+
+    FRAME_MAX_AGE_S = 3.0
+    PHOTO_MAX_WIDTH = 640
+
+    def _photo_bytes(self) -> bytes:
+        """PNG of the newest frame, or empty bytes when there is none.
+
+        The frame must be recent: a photo of what the camera saw three
+        seconds before the scan would mislead anybody who later checks it.
+        """
+        image = self._last_frame
+        if image is None or time.monotonic() - self._frame_seen_at > self.FRAME_MAX_AGE_S:
+            return b""
+        if image.width() > self.PHOTO_MAX_WIDTH:
+            image = image.scaledToWidth(self.PHOTO_MAX_WIDTH, Qt.TransformationMode.SmoothTransformation)
+        from PySide6.QtCore import QBuffer
+
+        buffer = QBuffer()
+        buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        return bytes(buffer.data())
+
+    def _save_scan_photo(self, result) -> None:
+        """Best-effort local photo at the moment of a successful scan.
+
+        A turned-off setting, a stopped camera or a full disk never blocks
+        or errors the scan; the photo is a courtesy, not a requirement.
+        """
+        if not self.context.photos.enabled:
+            return
+        try:
+            png = self._photo_bytes()
+            if png and self._employee is not None:
+                self.context.photos.save_scan(
+                    self._employee, result.kind, result.timestamp, png
+                )
+        except Exception:  # pragma: no cover - never block a scan on photos
+            self._last_frame = None
 
     def _on_camera_error(self, message: str) -> None:
         """Recover from a dead camera without losing the kiosk session.
@@ -632,6 +686,7 @@ class KioskWindow(QMainWindow):
             self._employee = None
             self._reset_timer.start(2500)
             return
+        self._save_scan_photo(result)
         self._display_result(result)
 
     def _display_result(self, result) -> None:
@@ -664,6 +719,7 @@ class KioskWindow(QMainWindow):
             self._reset_timer.start(2500)
             return
 
+        self._save_scan_photo(result)
         self._display_result(result)
 
     def _show_time_in_success(self, result) -> None:

@@ -7,6 +7,18 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Optional kiosk photo on every scan**: a Kiosk setting (off by default)
+  takes the camera's current picture at the moment of each recorded scan and
+  files it under the app data folder's photos directory, one folder per
+  working day, named by employee code, action and time. The service never
+  starts a camera, uploads anything, or touches the database: frames come
+  from the kiosk's own live feed, photos stay local, and a scan that happens
+  without a running camera (USB reader or manual entry) records normally
+  without a photo. A photo problem can never block a scan.
+  Files: `app/services/photo_service.py`, `app/utils/paths.py`,
+  `app/models/settings.py`, `app/context.py`, `app/ui/attendance_kiosk.py`,
+  `tests/test_photos.py`, `tests/test_ui.py`, `README.md`, `CHANGELOG.md`.
+
 * **Viewer role**: a read-only account type. On the Admin Account page,
   **Add account** creates an Administrator or a Viewer; a Viewer signs in
   like anybody else, sees only the dashboard and the reports, and the

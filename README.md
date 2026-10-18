@@ -267,7 +267,6 @@ screen with a live clock:
        [ SCAN QR CODE ]
 
    Scan your employee QR code
-
 ================================
 ```
 
@@ -277,6 +276,13 @@ fullscreen either way. If you would rather it always open as a movable
 window, turn off *Kiosk fullscreen* in Settings → Kiosk - the
 setting is honoured, and the window keeps its size and position between
 sessions.
+
+Optionally, the kiosk can photograph each scan. **Save camera photo on scan**
+in Settings → Kiosk is off by default; when it is on and the kiosk camera is
+running, the moment of every recorded scan is saved as a PNG in the photos
+folder of the app data directory, one folder per working day. A scan without
+a live camera simply prints without a photo, and photos never leave the
+computer.
 
 Leaving the kiosk requires the administrator password (Exit kiosk button
 or the window close button) - employees cannot reach the admin screens from
@@ -629,6 +635,10 @@ without rewriting screens or queries.
   failures per address.
 * Exported CSV/XLSX cells starting with `=`, `+`, `-` or `@` are neutralised
   so spreadsheet apps never evaluate employee-entered text as formulas.
+* Photographs taken at the kiosk are strictly opt-in (off by default), stay
+  in the app's own photos folder on that computer, and are only taken while
+  the kiosk camera is actually running. Nothing uploads them and nothing in
+  the database copies them.
 * Parameterised SQL everywhere; destructive restores always take a safety copy.
 * Admin-only configuration, session handling with auto sign-out.
 * Full audit log for sign-ins, employee changes, corrections, QR rotations,
@@ -666,6 +676,9 @@ VardiaShift is being built out in stages. Roughly in order:
   Administrator or Viewer choice.
 * Optional kiosk photo on every scan (off by default, kept locally) and an
   English / Filipino language toggle.
+* ~~Optional kiosk photo on every scan (off by default, kept locally)~~ done:
+  the Save camera photo on scan setting in Settings → Kiosk, saved under the
+  app data folder's photos directory.
 
 Further out and only ever optional: a read-only web view served by the
 phone service, and sync between computers. Keeping data on your own machine

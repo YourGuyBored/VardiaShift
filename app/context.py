@@ -54,6 +54,10 @@ class ApplicationContext:
             self.database, self.repositories, self.settings, self.paths
         )
         self.qr = QRCodeManager(self.repositories, self.settings, self.paths)
+        # Kiosk scan photos (opt-in): encoded by the UI, filed here.
+        from app.services.photo_service import PhotoService
+
+        self.photos = PhotoService(self.settings, self.paths)
 
         # Create the two shared attendance codes up front so the kiosk always
         # has something valid to look for.

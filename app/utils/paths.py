@@ -62,6 +62,10 @@ class AppPaths:
         return self.root / "logs"
 
     @property
+    def photos_dir(self) -> Path:
+        return self.root / "photos"
+
+    @property
     def config_file(self) -> Path:
         return self.root / "config.json"
 
@@ -78,6 +82,7 @@ class AppPaths:
             self.qr_dir,
             self.exports_dir,
             self.logs_dir,
+            self.photos_dir,
         )
 
     def ensure(self) -> "AppPaths":

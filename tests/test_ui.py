@@ -2061,3 +2061,49 @@ def test_settings_page_phone_card_warns_about_missing_pins(
         if "no phone PIN" in widget.text()
     ]
     assert labels, "the page must say who still lacks a phone PIN"
+
+
+# -- kiosk scan photos (opt-in) ----------------------------------------------
+def test_kiosk_saves_a_photo_of_the_scanning_moment(
+    context, qt_app, admin_session, team, frozen
+):
+    from PySide6.QtGui import QImage
+
+    from app.ui.attendance_kiosk import KioskWindow
+
+    employee = context.employees.get_by_code("EMP-001")
+    context.settings.set("kiosk_photo_on_scan", True, "admin")
+    window = KioskWindow(context)
+    # Tuesday: the team's Monday week is history, the day is fresh.
+    context.attendance.set_now_provider(lambda: frozen.at(10, 0, 1))
+    # A frame the camera just delivered, one scan later.
+    frame = QImage(80, 60, QImage.Format.Format_RGB32)
+    frame.fill(0)
+    window._remember_frame(frame)
+    assert window._photo_bytes() != b""
+
+    window._employee = employee
+    window._perform_clock("time_in", "time_in:1")
+    photos = list(context.paths.photos_dir.rglob("EMP-001_time_in_*.png"))
+    assert len(photos) == 1
+    assert photos[0].read_bytes().startswith(b"\x89PNG")
+
+    # A scan with no fresh frame writes nothing and still records cleanly.
+    window._last_frame = None
+    window._perform_clock("time_out", "time_out:1")
+    assert len(list(context.paths.photos_dir.rglob("*.png"))) == 1
+    window.deleteLater()
+
+
+def test_kiosk_photos_stay_off_by_default(context, qt_app, admin_session, team, frozen):
+    from app.ui.attendance_kiosk import KioskWindow
+
+    employee = context.employees.get_by_code("EMP-001")
+    window = KioskWindow(context)
+    # Tuesday: the day is fresh for the team's Monday week.
+    context.attendance.set_now_provider(lambda: frozen.at(10, 0, 1))
+    window._employee = employee
+    window._perform_clock("time_in", "time_in:1")
+    assert window._status.text() == "Time in recorded"
+    assert list(context.paths.photos_dir.rglob("*.png")) == []
+    window.deleteLater()

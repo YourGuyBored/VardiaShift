@@ -230,6 +230,12 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         maximum=300,
         suffix="sec",
     ),
+    SettingSpec(
+        "kiosk_photo_on_scan", "Save camera photo on scan", TYPE_BOOL, False, GROUP_KIOSK,
+        "When the kiosk camera is running, a photo is taken at the moment of "
+        "each scan and saved in the photos folder inside the app data "
+        "directory. Off by default; photos never leave this computer.",
+    ),
     # -- Phone attendance (local network) ------------------------------------
     SettingSpec(
         "phone_enabled", "Enable phone attendance", TYPE_BOOL, False, GROUP_PHONE,
@@ -487,6 +493,10 @@ class AppSettings:
     @property
     def kiosk_fullscreen(self) -> bool:
         return bool(self.get("kiosk_fullscreen"))
+
+    @property
+    def kiosk_photo_on_scan(self) -> bool:
+        return bool(self.get("kiosk_photo_on_scan"))
 
     @property
     def kiosk_auto_reset_seconds(self) -> int:
