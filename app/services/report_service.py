@@ -16,7 +16,7 @@ from app.models.attendance import (
     AttendanceStatus,
 )
 from app.models.audit import AuditLog
-from app.models.employee import Employee
+from app.models.employee import Employee, EmployeeStatus
 from app.models.shift import Shift
 from app.services.attendance_service import AttendanceService
 from app.services.settings_service import SettingsService
@@ -358,6 +358,114 @@ class ReportService:
                 ("Total hours", clock.format_duration(totals_minutes)),
             ],
             totals=["TOTAL", "", "", "", "", "", clock.format_duration(totals_minutes), f"{len(rows)} row(s)", ""],
+        )
+
+    # -- payroll summary -----------------------------------------------------
+    def payroll_summary(
+        self, start: date, end: date, employee_id: int | None = None
+    ) -> ReportResult:
+        """Hours per employee over an arbitrary pay period.
+
+        The admin picks the dates rather than the app guessing a cycle:
+        weekly, semi-monthly and monthly pay all come out of the same
+        export. Hours are the actually scanned time - approved leave shows
+        as its own column but never credits hours, matching how the
+        dashboard treats it.
+        """
+        clock = self.clock
+        if end < start:
+            start, end = end, start
+        start_key = start.strftime("%Y-%m-%d")
+        end_key = end.strftime("%Y-%m-%d")
+
+        minutes: dict[int, int] = {}
+        days: dict[int, set[str]] = {}
+        info: dict[int, tuple[str, str, str]] = {}
+        records = self.repos.attendance.list_for_range(start_key, end_key, employee_id)
+        for record in records:
+            emp = record.employee_id
+            worked = record.duration_minutes or 0
+            if record.is_open:
+                worked = TimeUtils.elapsed_minutes(
+                    TimeUtils.parse(record.time_in) or clock.now(), clock.now()
+                )
+            minutes[emp] = minutes.get(emp, 0) + worked
+            days.setdefault(emp, set()).add(record.work_date)
+            info[emp] = (record.employee_code, record.full_name, record.department or "-")
+
+        late = self.attendance.late_arrivals_by_employee(start, end)
+        leave_days: dict[int, int] = {}
+        for emp, _day in self.repos.leave.for_range(start_key, end_key):
+            leave_days[emp] = leave_days.get(emp, 0) + 1
+
+        roster = [
+            employee
+            for employee in self.repos.employees.list_all()
+            if employee_id is None or employee.employee_id == employee_id
+        ]
+        # The active roster anchors the report; anybody who left mid period
+        # still shows if they scanned hours during it.
+        included = {
+            employee.employee_id
+            for employee in roster
+            if employee.status == EmployeeStatus.ACTIVE
+        } | set(minutes) | set(leave_days)
+
+        headers = [
+            "Employee ID", "Full Name", "Department", "Days Worked",
+            "Hours Worked", "Hours (decimal)", "Leave Days", "Late Arrivals",
+        ]
+        rows: list[list] = []
+        total_minutes = 0
+        total_days = 0
+        total_leave = 0
+        total_late = 0
+        for employee in sorted(roster, key=lambda e: e.full_name.lower()):
+            emp = employee.employee_id
+            if emp not in included:
+                continue
+            code, name, department = info.get(
+                emp, (employee.employee_code, employee.full_name, employee.department or "-")
+            )
+            worked = minutes.get(emp, 0)
+            day_count = len(days.get(emp, ()))
+            leaves = leave_days.get(emp, 0)
+            lates = late.get(emp, 0)
+            total_minutes += worked
+            total_days += day_count
+            total_leave += leaves
+            total_late += lates
+            rows.append(
+                [
+                    code,
+                    name,
+                    department,
+                    str(day_count),
+                    clock.format_duration(worked),
+                    round(worked / 60.0, 2),
+                    str(leaves),
+                    str(lates),
+                ]
+            )
+        return ReportResult(
+            title="Payroll Summary",
+            subtitle=(
+                f"{self.settings.settings.organization_name}  •  "
+                f"{clock.format_date(start)} to {clock.format_date(end)}"
+            ),
+            headers=headers,
+            rows=rows,
+            summary=[
+                ("Period", f"{start.isoformat()} to {end.isoformat()}"),
+                ("Employees", str(len(rows))),
+                ("Total hours", clock.format_duration(total_minutes)),
+                ("Leave days", str(total_leave)),
+                ("Late arrivals", str(total_late)),
+            ],
+            totals=[
+                "TOTAL", "", "", str(total_days), clock.format_duration(total_minutes),
+                round(total_minutes / 60.0, 2), str(total_leave), str(total_late),
+            ],
         )
 
     # -- employee sheet ------------------------------------------------------

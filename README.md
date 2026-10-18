@@ -648,7 +648,8 @@ VardiaShift is being built out in stages. Roughly in order:
   department.
 * ~~More dashboard charts~~ done: the chart card switches between hours
   by day, late arrivals this week, and recorded hours by department.
-* Payroll export: hours per pay period per employee as CSV/XLSX.
+* ~~Payroll export: hours per pay period per employee as CSV/XLSX~~ done:
+  the Payroll summary report type, with any date range the admin picks.
 * Print-ready PDF reports (daily, weekly, monthly, per employee).
 * A read-only "Viewer" account type that can see the dashboard and reports
   but change nothing.

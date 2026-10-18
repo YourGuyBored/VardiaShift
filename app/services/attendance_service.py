@@ -776,15 +776,15 @@ class AttendanceService:
                 issues.append(f"Early out {clock.short_duration(short)}")
         return issues
 
-    def lateness_by_day(self, start: date, end: date) -> dict[str, int]:
-        """Late first scans per day across the whole crew.
+    def late_scans(self, start: date, end: date) -> list[tuple[int, str]]:
+        """Every late scan in the window as (employee_id, work_date) pairs.
 
         A record counts as late when its time-in runs past that day's
         schedule plus the grace period - the same rule the tardiness report
         applies. Approved leave excuses the day, and an employee without an
         assignment is measured against the organisation shift. Everything
-        is resolved in one pass of bulk reads, so the dashboard can call it
-        on every repaint.
+        is resolved in one pass of bulk reads, so callers may use this on
+        every repaint.
         """
         clock = self.clock
         if end < start:
@@ -795,13 +795,13 @@ class AttendanceService:
 
         records = self.repos.attendance.list_for_range(start_key, end_key)
         if not records:
-            return {}
+            return []
         on_leave = set(self.repos.leave.for_range(start_key, end_key).keys())
         own = {int(row["shift_id"]): row for row in self.repos.shifts.list_all()}
         assignments = self.repos.shifts.assignments_map()
         organiser = self.organisation_shift()
 
-        late: dict[str, int] = {}
+        late: list[tuple[int, str]] = []
         for record in records:
             if not record.time_in:
                 continue
@@ -822,8 +822,22 @@ class AttendanceService:
             window_start, _ = scheduled_window(shift, day)
             time_in = TimeUtils.parse(record.time_in)
             if time_in is not None and time_in > window_start + timedelta(minutes=grace):
-                late[key] = late.get(key, 0) + 1
+                late.append((record.employee_id, key))
         return late
+
+    def lateness_by_day(self, start: date, end: date) -> dict[str, int]:
+        """Late first scans per day across the whole crew."""
+        by_day: dict[str, int] = {}
+        for _employee_id, key in self.late_scans(start, end):
+            by_day[key] = by_day.get(key, 0) + 1
+        return by_day
+
+    def late_arrivals_by_employee(self, start: date, end: date) -> dict[int, int]:
+        """Late scans per employee across the window."""
+        by_employee: dict[int, int] = {}
+        for employee_id, _key in self.late_scans(start, end):
+            by_employee[employee_id] = by_employee.get(employee_id, 0) + 1
+        return by_employee
 
     def _schedule_text(self, employee, record, now: datetime, shift: Shift | None) -> str:
         """One dashboard cell: the day's schedule verdict or "-"."""

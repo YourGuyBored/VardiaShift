@@ -7,6 +7,16 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Payroll summary export**: a new report type on the Reports page. The
+  admin picks any date range - weekly, semi-monthly or monthly pay all
+  come out of the same export - and gets one row per employee: days
+  worked, hours in both H:MM and decimal form, approved leave days and
+  late arrivals. Hours are the actually scanned time, matching how the
+  dashboard treats leave. The active roster anchors the rows, and an
+  employee who left mid period keeps the hours they scanned.
+  Files: `app/services/report_service.py`, `app/services/attendance_service.py`,
+  `app/ui/reports.py`, `tests/test_payroll.py`.
+
 * **More dashboard charts**: the chart card now has a switcher. Alongside
   the hours-per-day bars there are two new views: Late arrivals counts the
   scans that came in past that day's schedule plus the grace period per

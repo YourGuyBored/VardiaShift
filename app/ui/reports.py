@@ -38,6 +38,7 @@ TYPES = [
     ("Daily report", "daily"),
     ("Weekly report", "weekly"),
     ("Monthly report", "monthly"),
+    ("Payroll summary", "payroll"),
     ("Custom range", "range"),
 ]
 
@@ -240,7 +241,7 @@ class ReportsPage(QWidget):
     def _on_type_changed(self, index: int) -> None:
         kind = self._type_box.itemData(index)
         is_daily = kind == "daily"
-        is_range = kind == "range"
+        is_range = kind in ("range", "payroll")
         self._day_label.setVisible(is_daily)
         self._day.setVisible(is_daily)
         self._week_box.setVisible(kind == "weekly")
@@ -322,6 +323,12 @@ class ReportsPage(QWidget):
             self._report = self.context.reports.weekly_report(window, employee_id)
         elif kind == "monthly":
             self._report = self.context.reports.monthly_report(clock.month_bounds(), employee_id)
+        elif kind == "payroll":
+            start = self._qdate_to_date(self._from_date)
+            end = self._qdate_to_date(self._to_date)
+            if end < start:
+                start, end = end, start
+            self._report = self.context.reports.payroll_summary(start, end, employee_id)
         else:
             start = self._qdate_to_date(self._from_date)
             end = self._qdate_to_date(self._to_date)
