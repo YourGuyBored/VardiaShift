@@ -71,6 +71,18 @@ class Shift:
     created_at: str = ""
     updated_at: str = ""
 
+    @classmethod
+    def from_row(cls, row) -> "Shift":
+        return cls(
+            shift_id=int(row["shift_id"]),
+            name=row["name"],
+            start_time=row["start_time"],
+            end_time=row["end_time"],
+            days=row["days"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
     @property
     def day_list(self) -> list[int]:
         return parse_days(self.days)

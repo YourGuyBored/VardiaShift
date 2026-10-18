@@ -7,6 +7,22 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Shifts**: give a group of employees their own work times. Shifts are
+  named schedules (a start, an end, and the days they cover) managed on a
+  new Shifts page, and assigned on the employee form; anyone left on the
+  organisation shift keeps the times set in Settings, as before. The
+  dashboard and the attendance tables now carry a Schedule column showing
+  Late, Early out, No show or Day off against that day's schedule, using
+  the same grace period the tardiness report already had, and that report
+  now works shift by shift: day rows on an assigned day off show as "Day
+  off" and cost nothing to patch, while an absence on a scheduled day
+  lists that shift's full hours. Employees without an assignment see no
+  change at all. Files: `app/database/migrations.py`,
+  `app/database/repositories.py`, `app/models/shift.py`,
+  `app/services/shift_service.py`, `app/services/attendance_service.py`,
+  `app/services/report_service.py`, `app/ui/shifts_view.py`,
+  `tests/test_shifts.py`, `tests/test_shift_schedule.py`.
+
 * **Auto time-out**: close forgotten sessions at a time you pick. When the
   switch in Settings -> Attendance is on, a session that is still open at
   *Auto time-out at* (default 23:59) is closed with that moment recorded as

@@ -28,6 +28,7 @@ from app.ui.window_sizing import (
 NAV_ITEMS = [
     ("dashboard", "Dashboard"),
     ("employees", "Employees"),
+    ("shifts", "Shifts"),
     ("attendance", "Attendance"),
     ("qr", "QR Codes"),
     ("reports", "Reports"),

@@ -68,9 +68,11 @@ def build_pages(window, context) -> None:
     from app.ui.qr_management import QRManagementPage
     from app.ui.reports import ReportsPage
     from app.ui.settings import SettingsPage
+    from app.ui.shifts_view import ShiftsPage
 
     dashboard = DashboardPage(context)
     employees = EmployeePage(context)
+    shifts = ShiftsPage(context)
     attendance = AttendancePage(context)
     qr_page = QRManagementPage(context)
     reports = ReportsPage(context)
@@ -79,6 +81,7 @@ def build_pages(window, context) -> None:
 
     window.register("dashboard", dashboard)
     window.register("employees", employees)
+    window.register("shifts", shifts)
     window.register("attendance", attendance)
     window.register("qr", qr_page)
     window.register("reports", reports)
@@ -92,6 +95,7 @@ def build_pages(window, context) -> None:
     return {
         "dashboard": dashboard,
         "employees": employees,
+        "shifts": shifts,
         "attendance": attendance,
         "qr": qr_page,
         "reports": reports,

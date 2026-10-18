@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as _time
+from datetime import date, datetime, time as _time, timedelta
 from pathlib import Path
 
 from app.models.attendance import (
@@ -17,6 +17,7 @@ from app.models.attendance import (
 )
 from app.models.audit import AuditLog
 from app.models.employee import Employee
+from app.models.shift import Shift
 from app.services.attendance_service import AttendanceService
 from app.services.settings_service import SettingsService
 from app.utils.time_utils import TimeUtils, WorkWeek
@@ -468,6 +469,20 @@ class ReportService:
         if employee_id is not None:
             employees = [e for e in employees if e.employee_id == employee_id]
 
+        # Resolve each employee's own shift once; everyone without an
+        # assignment keeps the organisation shift on every day.
+        shifts_by_id = {
+            int(row["shift_id"]): Shift.from_row(row)
+            for row in self.repos.shifts.list_all()
+        }
+        schedules: dict[int, Shift | None] = {
+            employee.employee_id: shifts_by_id.get(
+                self.repos.shifts.assigned_shift_id(employee.employee_id)
+            )
+            for employee in employees
+        }
+        organiser = self.attendance.organisation_shift()
+
         start_key = start.strftime("%Y-%m-%d")
         end_key = end.strftime("%Y-%m-%d")
         days = clock.date_range(start, end)
@@ -483,7 +498,8 @@ class ReportService:
             for employee in employees:
                 record = by_employee_day.get((employee.employee_id, key))
                 row = self._tardiness_row(
-                    day, record, shift_start, grace, expected_minutes
+                    day, record, self._day_schedule(schedules.get(employee.employee_id), organiser, day),
+                    grace,
                 )
                 rows.append(row)
                 patch = row[headers.index("Missing To Patch")]
@@ -503,7 +519,7 @@ class ReportService:
             (
                 f"Week {clock.format_date(week.start)} - {clock.format_date(week.end)}",
                 clock.format_duration(
-                    self._missing_over(employees, by_employee_day, week.start, week.end, grace, expected_minutes)
+                    self._missing_over(employees, by_employee_day, week.start, week.end, grace, schedules, organiser)
                 ),
             )
         )
@@ -511,7 +527,7 @@ class ReportService:
             (
                 f"Month {month.start.strftime('%B %Y')}",
                 clock.format_duration(
-                    self._missing_over(employees, by_employee_day, month.start, month.end, grace, expected_minutes)
+                    self._missing_over(employees, by_employee_day, month.start, month.end, grace, schedules, organiser)
                 ),
             )
         )
@@ -526,7 +542,8 @@ class ReportService:
                             start=start,
                             end=end,
                             grace=grace,
-                            expected_minutes=expected_minutes,
+                            schedules=schedules,
+                            organiser=organiser,
                         )
                     ),
                 )
@@ -560,7 +577,8 @@ class ReportService:
         start: date,
         end: date,
         grace: int,
-        expected_minutes: int,
+        schedules: dict[int, Shift | None],
+        organiser: Shift,
     ) -> int:
         """Hours still to patch across a window, summed per day."""
         clock = self.clock
@@ -571,25 +589,48 @@ class ReportService:
                 row = self._tardiness_row(
                     day,
                     by_employee_day.get((employee.employee_id, key)),
-                    self.settings.settings.shift_start,
+                    self._day_schedule(schedules.get(employee.employee_id), organiser, day),
                     grace,
-                    expected_minutes,
                 )
-                patch = row[7]
+                patch = row[6]
                 if patch != "-":
                     total += _parse_duration(patch)
         return total
+
+    @staticmethod
+    def _day_schedule(own: Shift | None, organiser: Shift, day: date) -> Shift | None:
+        """The shift for one day: the employee's own when it covers the date,
+        otherwise the organisation shift - or None on a scheduled day off."""
+        if own is None:
+            return organiser
+        return own if own.covers(day) else None
 
     def _tardiness_row(
         self,
         day: date,
         record: AttendanceRecord | None,
-        shift_start: str,
+        shift: Shift | None,
         grace: int,
-        expected_minutes: int,
     ) -> list:
-        """One day for one employee: the issue, and the hours it costs."""
+        """One day for one employee: the issue, and the hours it costs.
+
+        ``shift`` is the resolved schedule for the day; None means a
+        scheduled day off, which shows as its own line and costs nothing
+        to patch.
+        """
         clock = self.clock
+        if shift is None:
+            return [
+                clock.format_date(day),
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "Day off",
+            ]
+        expected_minutes = shift.duration_minutes()
         issues: list[str] = []
         minutes = 0
         late_minutes = 0
@@ -608,11 +649,15 @@ class ReportService:
             issues.append("Absent")
         else:
             if time_in is not None:
-                scheduled = _combine(day, shift_start)
-                late = TimeUtils.elapsed_minutes(scheduled, time_in) - grace
-                if late > 0:
-                    late_minutes = late
-                    issues.append(f"Late {clock.format_duration(late)}")
+                scheduled = _combine(day, shift.start_time)
+                # Coming in early is not lateness; only a start after the
+                # window plus grace counts, minutes then measured from the
+                # scheduled start.
+                if time_in > scheduled + timedelta(minutes=grace):
+                    late = TimeUtils.elapsed_minutes(scheduled, time_in) - grace
+                    if late > 0:
+                        late_minutes = late
+                        issues.append(f"Late {clock.format_duration(late)}")
             if time_out is None:
                 issues.append("Missing time-out")
             elif minutes < expected_minutes - grace:

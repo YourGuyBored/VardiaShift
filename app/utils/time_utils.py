@@ -243,6 +243,13 @@ class TimeUtils:
         return f"{sign}{hours}h {mins:02d}m"
 
     @staticmethod
+    def short_duration(minutes: float | int | None) -> str:
+        """Compact form for narrow table cells: ``42m``, ``1h 05m``."""
+        total = max(0, int(round(float(minutes or 0))))
+        hours, mins = divmod(total, 60)
+        return f"{hours}h {mins:02d}m" if hours else f"{mins}m"
+
+    @staticmethod
     def decimal_hours(minutes: float | int | None) -> float:
         if not minutes:
             return 0.0

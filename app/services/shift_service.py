@@ -186,12 +186,4 @@ class ShiftService:
 
     @staticmethod
     def to_model(row) -> Shift:
-        return Shift(
-            shift_id=int(row["shift_id"]),
-            name=row["name"],
-            start_time=row["start_time"],
-            end_time=row["end_time"],
-            days=row["days"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+        return Shift.from_row(row)

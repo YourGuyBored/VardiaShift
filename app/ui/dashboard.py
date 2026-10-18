@@ -35,7 +35,7 @@ from app.ui.widgets import (
     elide_headers,
 )
 
-COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Today", "This Week", "Goal", "Source"]
+COLUMNS = ["Employee", "Employee ID", "Department", "Status", "Time In", "Time Out", "Schedule", "Today", "This Week", "Goal", "Source"]
 
 
 class DashboardPage(QWidget):
@@ -182,6 +182,13 @@ class DashboardPage(QWidget):
         header.setSectionResizeMode(
             COLUMNS.index("Status"), QHeaderView.ResizeMode.Fixed
         )
+        # The schedule verdict is a short verdict too ("Late 12m", "Day off");
+        # a fixed column keeps the table from re-dancing each refresh, and
+        # anything longer still shows in the cell's tooltip.
+        header.setSectionResizeMode(
+            COLUMNS.index("Schedule"), QHeaderView.ResizeMode.Fixed
+        )
+        self._table.setColumnWidth(COLUMNS.index("Schedule"), 118)
         # Sized to the longest status pill, so the column neither shifts nor
         # clips as the day's attendance changes.
         self._table.setColumnWidth(
@@ -346,15 +353,20 @@ class DashboardPage(QWidget):
             for column, value in (
                 (4, clock.format_time(row.time_in) if row.time_in else "-"),
                 (5, clock.format_time(row.time_out) if row.time_out else "-"),
-                (6, row.today_text),
-                (7, row.week_text),
-                (8, row.goal_text),
-                (9, source_text),
+                (7, row.today_text),
+                (8, row.week_text),
+                (9, row.goal_text),
+                (10, source_text),
             ):
                 cell = QTableWidgetItem(value)
-                if column in (6, 7, 8):
+                if column in (7, 8, 9):
                     cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._table.setItem(index, column, cell)
+
+            schedule_cell = QTableWidgetItem(row.schedule or "-")
+            if row.schedule and row.schedule != "-":
+                schedule_cell.setToolTip(row.schedule)
+            self._table.setItem(index, 6, schedule_cell)
 
         self._table.setVisible(bool(rows))
         self._empty.setVisible(not rows and not summary.rows)

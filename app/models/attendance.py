@@ -243,6 +243,7 @@ class EmployeeToday:
     time_out: datetime | None = None
     missing: bool = False
     source: str = ""
+    schedule: str = "-"
 
     @property
     def status_label(self) -> str:

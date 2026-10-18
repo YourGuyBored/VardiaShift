@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QTime
+
 import pytest
 
 
@@ -169,8 +171,145 @@ def test_migration_to_shift_tables_preserves_everything(context, admin, employee
     assert "employee_shifts" in tables
 
 
+def test_restoring_an_older_backup_upgrades_it_in_place(
+    context, admin, employee, frozen, tmp_path
+):
+    """A backup made before shifts existed must not leave the app crippled."""
+    import sqlite3
+
+    from app.database.migrations import SCHEMA_VERSION, current_version
+
+    donor = tmp_path / "old_backup.db"
+    context.database.backup_to(donor)
+    with sqlite3.connect(donor) as connection:
+        connection.execute("DROP TABLE IF EXISTS employee_shifts")
+        connection.execute("DROP TABLE IF EXISTS shifts")
+        connection.execute(
+            "UPDATE app_meta SET value = '7' WHERE key = 'schema_version'"
+        )
+        connection.commit()
+    connection.close()
+
+    safety = context.backups.restore_backup(donor, "admin")
+    assert safety.is_file()
+    assert current_version(context.database) == SCHEMA_VERSION
+    assert context.shifts.list_shifts() == []
+
+    # The dashboard reads the shift tables on every rebuild; it has to work
+    # right now, not after a restart.
+    context.attendance.time_in(employee, frozen.at(9, 0))
+    summary = context.attendance.dashboard()
+    assert summary.rows
+
+
+def test_restoring_a_current_backup_is_unchanged(context, admin, employee):
+    backup = context.backups.create_backup("admin")
+    safety = context.backups.restore_backup(backup, "admin")
+    assert safety.is_file()
+    assert context.shifts.list_shifts() == []
+    assert context.repositories.employees.get(employee.employee_id) is not None
+
+
 def test_migrate_is_idempotent_with_shift_tables(context, admin, shift):
     from app.database.migrations import SCHEMA_VERSION, migrate
 
     assert migrate(context.database) == SCHEMA_VERSION
     assert len(context.shifts.list_shifts()) == 1
+
+
+# -- UI -------------------------------------------------------------------
+@pytest.fixture
+def admin_session(context, admin):
+    return context.authentication.authenticate("admin", "Sup3rSecret!")
+
+
+def test_shifts_page_lists_shifts_with_headcount(context, admin, qt_app):
+    from app.ui.shifts_view import ShiftsPage
+
+    context.shifts.create_shift("Night", "22:00", "06:00", "0,1,2", "admin")
+    page = ShiftsPage(context)
+    assert page._table.rowCount() == 1
+    night = page._table.item(0, 0).text()
+    times = page._table.item(0, 1).text()
+    days = page._table.item(0, 2).text()
+    members = page._table.item(0, 3).text()
+    assert night == "Night"
+    assert times == "22:00 - 06:00"
+    assert days == "Mon to Wed"
+    assert members == "0"
+
+
+def test_shift_dialog_rejects_a_shift_with_no_days(context, admin, qt_app, admin_session):
+    from app.ui.shifts_view import ShiftDialog
+
+    dialog = ShiftDialog(context)
+    dialog._name.setText("Sunday only")
+    for box in dialog._days.values():
+        box.setChecked(False)
+    dialog._save()
+    assert not dialog._error.isHidden()
+    assert dialog._error.text() == "Pick at least one working day."
+    assert context.shifts.list_shifts() == []
+
+
+def test_shift_dialog_saves_changes(context, admin, qt_app, admin_session):
+    from app.ui.shifts_view import ShiftDialog
+
+    shift = context.shifts.create_shift("Day", "09:00", "17:00", "0,1,2,3,4", "admin")
+    dialog = ShiftDialog(context, shift=shift)
+    dialog._name.setText("Day")
+    dialog._start.setTime(QTime(8, 30))
+    dialog._days[4].setChecked(False)  # Friday off
+    dialog._save()
+    saved = context.shifts.get_shift(shift.shift_id)
+    assert saved.start_time == "08:30"
+    assert saved.day_list == [0, 1, 2, 3]
+    log = context.repositories.audit.list_recent(action="shift_edit")[0]
+    assert "08:30" in log.new_value
+
+
+def test_employee_dialog_assigns_a_shift(context, admin, qt_app, admin_session, employee):
+    from PySide6.QtCore import QTime
+
+    from app.ui.employee_management import EmployeeDialog
+
+    shift = context.shifts.create_shift("Night", "22:00", "06:00", "0,1", "admin")
+    dialog = EmployeeDialog(context, employee)
+    dialog._shift.setCurrentIndex(dialog._shift.findData(shift.shift_id))
+    dialog._on_save()
+
+    assert context.shifts.assigned_shift_id(employee.employee_id) == shift.shift_id
+    log = context.repositories.audit.list_recent(action="shift_assign")[0]
+    assert f"Assigned {employee.employee_code}" in log.description
+
+
+def test_employee_dialog_reassigns_and_returns_to_the_org_shift(
+    context, admin, qt_app, admin_session, employee
+):
+    from app.ui.employee_management import EmployeeDialog
+
+    first = context.shifts.create_shift("First", "08:00", "16:00", "0,1", "admin")
+    second = context.shifts.create_shift("Second", "12:00", "20:00", "0,1", "admin")
+    context.shifts.assign(employee, first.shift_id, "admin")
+
+    dialog = EmployeeDialog(context, employee)
+    dialog._shift.setCurrentIndex(dialog._shift.findData(second.shift_id))
+    dialog._on_save()
+    assert context.shifts.assigned_shift_id(employee.employee_id) == second.shift_id
+
+    dialog = EmployeeDialog(context, employee)
+    dialog._shift.setCurrentIndex(dialog._shift.findData(None))
+    dialog._on_save()
+    assert context.shifts.assigned_shift_id(employee.employee_id) is None
+
+
+def test_dashboard_table_has_a_schedule_column(context, admin, qt_app):
+    from app.ui.dashboard import DashboardPage
+
+    context.settings.set("default_shift_start", "09:00", "admin")
+    context.employees.create("EMP-001", "Juan Dela Cruz", admin_username="admin")
+    page = DashboardPage(context)
+    page._populate(page.context.attendance.dashboard())
+    headers = [page._table.horizontalHeaderItem(c).text() for c in range(page._table.columnCount())]
+    assert "Schedule" in headers
+    assert page._table.rowCount() >= 1

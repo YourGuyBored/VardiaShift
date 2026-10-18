@@ -631,8 +631,10 @@ without rewriting screens or queries.
 
 VardiaShift is being built out in stages. Roughly in order:
 
-* Shift scheduling with per-employee assignments, and late / early-out /
-  no-show flags next to the existing missing time-out flag.
+* ~~Shift scheduling with per-employee assignments, and late / early-out /
+  no-show flags~~ done: named shifts on the Shifts page, assigned per
+  employee, with Late, Early out, No show and Day off shown on the
+  dashboard, the attendance tables and the tardiness report.
 * Leave tracking (sick, vacation, holiday, other) entered by an
   administrator, so approved leave never counts against anyone.
 * Optional break tracking between time-in and time-out.

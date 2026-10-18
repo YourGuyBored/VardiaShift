@@ -41,8 +41,8 @@ from app.ui.widgets import (
     elide_headers,
 )
 
-HISTORY_COLUMNS = ["Date", "Time In", "Time Out", "Hours", "Status"]
-TODAY_COLUMNS = ["Employee", "Employee ID", "Time In", "Time Out", "Hours", "Status", "Source"]
+HISTORY_COLUMNS = ["Date", "Time In", "Time Out", "Hours", "Status", "Schedule"]
+TODAY_COLUMNS = ["Employee", "Employee ID", "Time In", "Time Out", "Hours", "Status", "Schedule", "Source"]
 OPEN_COLUMNS = ["Employee", "Date", "Time In", "Elapsed", "Status"]
 AUDIT_COLUMNS = ["When", "Administrator", "Action", "Old value", "New value", "Reason"]
 
@@ -574,6 +574,25 @@ class AttendancePage(QWidget):
         self._load_open_sessions()
         self._load_audit()
 
+    def _schedule_cell(self, record, clock) -> str:
+        """The Schedule column text for one attendance record.
+
+        Late and Early out come from the day's schedule, grace aware. A
+        scheduled day off with a manual session shows as "Day off"; any
+        problem resolving the schedule degrades to a quiet dash.
+        """
+        try:
+            day = date.fromisoformat(record.work_date)
+            shift = self.context.attendance.scheduled_shift(record.employee_id, day)
+            if shift is None:
+                return "Day off"
+            issues = self.context.attendance.schedule_issues(
+                record.employee_id, day, record, shift=shift
+            )
+        except Exception:  # pragma: no cover - the table still draws
+            return "-"
+        return ", ".join(issues) if issues else "-"
+
     def _load_today(self) -> None:
         clock = self.context.clock
         qdate = self._today_date.date()
@@ -611,9 +630,15 @@ class AttendancePage(QWidget):
             badge = StatusBadge(record.status)
             self._today_table.setCellWidget(index, 5, badge_cell(badge))
 
+            schedule_text = self._schedule_cell(record, clock)
+            schedule_item = QTableWidgetItem(schedule_text)
+            if schedule_text != "-":
+                schedule_item.setToolTip(schedule_text)
+            self._today_table.setItem(index, 6, schedule_item)
+
             source_item = QTableWidgetItem(self.context.attendance.source_label(record.source))
             source_item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
-            self._today_table.setItem(index, 6, source_item)
+            self._today_table.setItem(index, 7, source_item)
 
         self._today_table.setVisible(bool(records))
         self._today_empty.setVisible(not records)
@@ -661,6 +686,12 @@ class AttendancePage(QWidget):
                 self._history_table.setItem(index, column, item)
             badge = StatusBadge(record.status)
             self._history_table.setCellWidget(index, 4, badge_cell(badge))
+
+            schedule_text = self._schedule_cell(record, clock)
+            schedule_item = QTableWidgetItem(schedule_text)
+            if schedule_text != "-":
+                schedule_item.setToolTip(schedule_text)
+            self._history_table.setItem(index, 5, schedule_item)
 
         self._history_table.setVisible(bool(records))
         self._history_empty.setVisible(not records)

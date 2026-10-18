@@ -30,6 +30,7 @@ from app.models.audit import (
     SEVERITY_WARNING,
 )
 from app.models.employee import Employee, EmployeeStatus
+from app.models.shift import Shift, scheduled_window
 from app.services.settings_service import SettingsService
 from app.utils.time_utils import TimeUtils, WorkWeek
 
@@ -619,6 +620,12 @@ class AttendanceService:
         )
         week_totals = self.repos.attendance.minutes_by_employee(start, end, now_iso)
 
+        # One read for who is on which shift, then resolved per row below.
+        assignments = self.repos.shifts.assignments_map()
+        own_shifts = {int(row["shift_id"]): row for row in self.repos.shifts.list_all()}
+        org_shift = self.organisation_shift()
+        work_day = now.date()
+
         for employee in employees:
             record = records_today.get(employee.employee_id)
             emp_goal = self.goal_minutes(employee)
@@ -627,6 +634,14 @@ class AttendanceService:
             wk_minutes = week_totals.get(employee.employee_id, 0)
             today_minutes += day_minutes
             week_minutes += wk_minutes
+
+            own_row = own_shifts.get(assignments.get(employee.employee_id, -1))
+            if own_row is not None:
+                own = Shift.from_row(own_row)
+                shift = own if own.covers(work_day) else None
+            else:
+                shift = org_shift
+            schedule_text = self._schedule_text(employee, record, now, shift)
 
             status = AttendanceStatus.NOT_IN
             missing_flag = False
@@ -653,6 +668,7 @@ class AttendanceService:
                     time_out=TimeUtils.parse(record.time_out) if record else None,
                     missing=missing_flag,
                     source=record.source if record is not None else "",
+                    schedule=schedule_text,
                 )
             )
 
@@ -670,6 +686,96 @@ class AttendanceService:
             rows=rows,
             week_label=clock.week_label(),
         )
+
+    # -- schedules -----------------------------------------------------------
+    def assigned_shift(self, employee_id: int) -> Shift | None:
+        """The employee's own shift, or None when they follow the organisation shift."""
+        row = self.repos.shifts.assignment_for(employee_id)
+        return Shift.from_row(row) if row else None
+
+    def organisation_shift(self) -> Shift:
+        """The Settings-wide shift as a Shift value; it applies every day.
+
+        The tardiness report has always measured late and absent against
+        this pair of times on every date, and employees without their own
+        assignment keep that rule.
+        """
+        settings = self.settings.settings
+        return Shift(
+            shift_id=0,
+            name="Organisation shift",
+            start_time=settings.shift_start,
+            end_time=settings.shift_end,
+            days=",".join(str(day) for day in range(7)),
+        )
+
+    def scheduled_shift(
+        self, employee_id: int, day: date, organiser: Shift | None = None
+    ) -> Shift | None:
+        """The shift that governs this employee on this day.
+
+        Their assigned shift on its working days, the organisation shift on
+        every day when they have no assignment, and None (a day off) when
+        their assigned shift does not cover the date.
+        """
+        own = self.assigned_shift(employee_id)
+        if own is not None:
+            return own if own.covers(day) else None
+        return organiser or self.organisation_shift()
+
+    def schedule_issues(
+        self,
+        employee_id: int,
+        day: date,
+        record: AttendanceRecord | None = None,
+        shift: Shift | None = None,
+        moment: datetime | None = None,
+    ) -> list[str]:
+        """Late / Early out / No show against the day's schedule, grace aware.
+
+        ``shift`` may be handed in when the caller already resolved it (the
+        dashboard resolves once for the whole crew). An unclosed session is
+        not an early out; the Missing Time Out pill covers that state.
+        """
+        if shift is None:
+            shift = self.scheduled_shift(employee_id, day)
+        if shift is None:
+            return []
+        if record is None:
+            record = self.repos.attendance.get_for_date(employee_id, day.strftime("%Y-%m-%d"))
+        clock = self.clock
+        now = moment or self.now()
+        grace = self.settings.settings.grace_period_minutes
+        window_start, window_end = scheduled_window(shift, day)
+        issues: list[str] = []
+
+        time_in = TimeUtils.parse(record.time_in) if record is not None else None
+        time_out = TimeUtils.parse(record.time_out) if record is not None else None
+        if time_in is None:
+            if now > window_start + timedelta(minutes=grace):
+                issues.append("No show")
+            return issues
+        if time_in > window_start + timedelta(minutes=grace):
+            late = TimeUtils.elapsed_minutes(window_start, time_in) - grace
+            if late > 0:
+                issues.append(f"Late {clock.short_duration(late)}")
+        if time_out is not None and time_out < window_end - timedelta(minutes=grace):
+            short = TimeUtils.elapsed_minutes(time_out, window_end) - grace
+            if short > 0:
+                issues.append(f"Early out {clock.short_duration(short)}")
+        return issues
+
+    def _schedule_text(self, employee, record, now: datetime, shift: Shift | None) -> str:
+        """One dashboard cell: the day's schedule verdict or "-"."""
+        if shift is None:
+            return "Day off"
+        try:
+            issues = self.schedule_issues(
+                employee.employee_id, now.date(), record, shift=shift, moment=now
+            )
+        except Exception:  # pragma: no cover - a broken schedule must not eat the table
+            return "-"
+        return ", ".join(issues) if issues else "-"
 
     # -- housekeeping --------------------------------------------------------
     def missing_timeout_threshold(self, moment: datetime | None = None) -> datetime:

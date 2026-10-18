@@ -136,7 +136,7 @@ def test_main_window_builds_every_page(context, qt_app, admin_session):
     window = MainWindow(context)
     pages = build_pages(window, context)
     assert set(pages) == {
-        "dashboard", "employees", "attendance", "qr", "reports", "settings", "admin"
+        "dashboard", "employees", "shifts", "attendance", "qr", "reports", "settings", "admin"
     }
     for key in pages:
         window.show_page(key)
@@ -312,9 +312,9 @@ def test_attendance_page_today_and_history(context, qt_app, team, frozen):
     page._today_date.setDate(QDate(day.year, day.month, day.day))
     page._tabs.setCurrentIndex(0)
     assert page._today_table.rowCount() == 2
-    assert page._today_table.columnCount() == 7
-    assert page._today_table.item(0, 6) is not None
-    assert page._today_table.item(0, 6).text() in ("Desktop", "Phone", "Admin correction", "Manual")
+    assert page._today_table.columnCount() == 8
+    assert page._today_table.item(0, 7) is not None
+    assert page._today_table.item(0, 7).text() in ("Desktop", "Phone", "Admin correction", "Manual")
     # Last week is guaranteed empty for fresh fixtures regardless of which
     # weekday today is (the auto-selected employee's records are this week).
     page._range_box.setCurrentIndex(2)  # Last week

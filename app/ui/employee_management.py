@@ -126,6 +126,20 @@ class EmployeeDialog(QDialog):
         layout.addWidget(self._pin_clear)
         layout.addWidget(self._row("Weekly work goal", self._goal, "", "weekly_goal_hours"))
 
+        # Who they work when: blank means the organisation-wide shift from
+        # Settings keeps applying, as it always has.
+        self._shift = Select()
+        self._shift.addItem("Organisation shift", None)
+        for shift in context.shifts.list_shifts():
+            self._shift.addItem(shift.summary(), shift.shift_id)
+        if employee is not None:
+            assigned = context.shifts.assigned_shift_id(employee.employee_id)
+            if assigned is not None:
+                index = self._shift.findData(assigned)
+                if index >= 0:
+                    self._shift.setCurrentIndex(index)
+        layout.addWidget(self._row("Shift", self._shift, "", "shift"))
+
         note = QLabel(
             "A secure personal QR code is generated automatically for every employee."
         )
@@ -282,6 +296,19 @@ class EmployeeDialog(QDialog):
             self.context.employees.set_phone_pin(saved, pin, admin_username=username)
         elif self.employee is not None and self._pin_clear.isChecked():
             self.context.employees.clear_phone_pin(saved, admin_username=username)
+        # The shift is applied only to a saved employee, and only when it
+        # actually changed, so re-saving a person never writes a wasted entry.
+        if self._shift.currentData() != self.context.shifts.assigned_shift_id(
+            saved.employee_id
+        ):
+            try:
+                self.context.shifts.assign(
+                    saved, self._shift.currentData(), admin_username=username
+                )
+            except Exception as exc:
+                QMessageBox.information(
+                    self, "Shift not applied", getattr(exc, "message", str(exc))
+                )
         self.accept()
 
 

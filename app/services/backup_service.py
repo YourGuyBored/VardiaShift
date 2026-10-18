@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from app.database.database import Database
+from app.database.migrations import migrate
 from app.database.repositories import Repositories
 from app.models.audit import ACTION_BACKUP, ACTION_RESTORE, SEVERITY_CRITICAL, SEVERITY_INFO
 from app.services.settings_service import SettingsService
@@ -187,6 +188,13 @@ class BackupService:
             "attendance": int(self.db.scalar("SELECT COUNT(*) FROM attendance")),
             "admins": int(self.db.scalar("SELECT COUNT(*) FROM admins")),
         }
+
+        # An older backup may come from a schema the running app does not
+        # expect any more (for example tables added in a later version).
+        # Bringing it up to date here keeps the app working on the restored
+        # data without waiting for a restart; the data itself is unchanged.
+        migrate(self.db)
+
         self.repos.audit.log(
             ACTION_RESTORE,
             admin_username=admin_username,
