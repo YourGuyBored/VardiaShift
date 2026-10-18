@@ -22,6 +22,10 @@ ACTION_RESTORE = "backup_restore"
 ACTION_AUTO_CLOSE = "attendance_autoclose"
 ACTION_PHONE_PIN_SET = "employee_phone_pin_set"
 ACTION_PHONE_PIN_CLEAR = "employee_phone_pin_clear"
+ACTION_SHIFT_ADD = "shift_add"
+ACTION_SHIFT_EDIT = "shift_edit"
+ACTION_SHIFT_DELETE = "shift_delete"
+ACTION_SHIFT_ASSIGN = "shift_assign"
 
 ACTION_LABELS = {
     ACTION_LOGIN: "Signed in",
@@ -42,6 +46,10 @@ ACTION_LABELS = {
     ACTION_AUTO_CLOSE: "Attendance auto-closed",
     ACTION_PHONE_PIN_SET: "Phone PIN set",
     ACTION_PHONE_PIN_CLEAR: "Phone PIN cleared",
+    ACTION_SHIFT_ADD: "Shift added",
+    ACTION_SHIFT_EDIT: "Shift edited",
+    ACTION_SHIFT_DELETE: "Shift deleted",
+    ACTION_SHIFT_ASSIGN: "Shift assigned",
 }
 
 SEVERITY_INFO = "info"

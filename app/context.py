@@ -21,6 +21,7 @@ from app.services.employee_service import EmployeeService
 from app.services.qr_service import QRCodeManager
 from app.services.report_service import ReportService
 from app.services.settings_service import SettingsService
+from app.services.shift_service import ShiftService
 from app.utils.paths import AppPaths, app_paths
 from app.utils.time_utils import TimeUtils
 
@@ -44,6 +45,7 @@ class ApplicationContext:
 
         self.authentication = AuthenticationService(self.repositories)
         self.employees = EmployeeService(self.repositories)
+        self.shifts = ShiftService(self.repositories)
         self.attendance = AttendanceService(self.repositories, self.settings)
         self.reports = ReportService(self.attendance, self.settings)
         self.backups = BackupService(

@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.constants import APP_VERSION
 from app.database.database import Database, utc_now
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -51,6 +51,26 @@ CREATE INDEX IF NOT EXISTS idx_employees_status ON employees (status);
 CREATE INDEX IF NOT EXISTS idx_employees_name ON employees (full_name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_badge
     ON employees (badge_code COLLATE NOCASE) WHERE badge_code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS shifts (
+    shift_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    start_time  TEXT NOT NULL,
+    end_time    TEXT NOT NULL,
+    days        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS employee_shifts (
+    employee_id INTEGER PRIMARY KEY
+                 REFERENCES employees (employee_id) ON DELETE CASCADE,
+    shift_id    INTEGER NOT NULL
+                REFERENCES shifts (shift_id) ON DELETE CASCADE,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_shifts_shift ON employee_shifts (shift_id);
 
 CREATE TABLE IF NOT EXISTS attendance (
     attendance_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,6 +243,36 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             # readable form; NULL means the employee has no phone PIN yet and
             # keeps existing rows untouched.
             "ALTER TABLE employees ADD COLUMN phone_pin_hash TEXT",
+        ],
+    ),
+    (
+        8,
+        [
+            # Named shifts and per-employee assignment. Both tables are new
+            # and start empty, so no existing data is touched: an employee
+            # without an assignment keeps the organisation-wide shift from
+            # Settings, exactly as before. `days` holds the weekday indexes
+            # the shift covers ("0" = Monday), "23:59" style times may cross
+            # midnight (a night shift writes end before start). IF NOT
+            # EXISTS because migrate() runs BASE_SCHEMA first, which already
+            # created these tables.
+            """CREATE TABLE IF NOT EXISTS shifts (
+                shift_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
+                start_time  TEXT NOT NULL,
+                end_time    TEXT NOT NULL,
+                days        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS employee_shifts (
+                employee_id INTEGER PRIMARY KEY
+                             REFERENCES employees (employee_id) ON DELETE CASCADE,
+                shift_id    INTEGER NOT NULL
+                            REFERENCES shifts (shift_id) ON DELETE CASCADE,
+                updated_at  TEXT NOT NULL
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_employee_shifts_shift ON employee_shifts (shift_id)""",
         ],
     ),
 ]

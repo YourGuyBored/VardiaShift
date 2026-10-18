@@ -183,6 +183,19 @@ def validate_date_string(value: str, field_name: str = "Date") -> str:
     return text
 
 
+def validate_shift_days(value: str | list[int] | tuple[int, ...], field_name: str = "Working days") -> str:
+    """Canonical weekday list ("0,1,2"); at least one day, all in 0 Monday to 6 Sunday."""
+    from app.models.shift import format_days, parse_days
+
+    try:
+        days = parse_days(value)
+    except ValueError as exc:
+        raise ValidationError(str(exc), field_name) from exc
+    if not days:
+        raise ValidationError("Pick at least one working day.", field_name)
+    return format_days(days)
+
+
 def validate_non_negative_int(value, field_name: str, maximum: int = 100_000) -> int:
     try:
         number = int(value)

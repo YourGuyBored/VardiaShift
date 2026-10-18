@@ -740,6 +740,84 @@ class AttendanceRepository:
         return cursor.rowcount or 0
 
 
+class ShiftRepository:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def list_all(self):
+        return self.db.query("SELECT * FROM shifts ORDER BY name COLLATE NOCASE")
+
+    def get(self, shift_id: int):
+        return self.db.query_one("SELECT * FROM shifts WHERE shift_id = ?", (shift_id,))
+
+    def name_exists(self, name: str, exclude_id: int | None = None) -> bool:
+        if exclude_id is None:
+            return self.db.query_one(
+                "SELECT 1 FROM shifts WHERE name = ? COLLATE NOCASE", (name,)
+            ) is not None
+        return self.db.query_one(
+            "SELECT 1 FROM shifts WHERE name = ? COLLATE NOCASE AND shift_id != ?",
+            (name, exclude_id),
+        ) is not None
+
+    def create(self, name: str, start_time: str, end_time: str, days: str) -> int:
+        now = utc_now()
+        return self.db.insert_returning_id(
+            "INSERT INTO shifts (name, start_time, end_time, days, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, start_time, end_time, days, now, now),
+        )
+
+    def update(self, shift_id: int, name: str, start_time: str, end_time: str, days: str) -> None:
+        self.db.execute(
+            "UPDATE shifts SET name = ?, start_time = ?, end_time = ?, days = ?, updated_at = ? "
+            "WHERE shift_id = ?",
+            (name, start_time, end_time, days, utc_now(), shift_id),
+        )
+
+    def delete(self, shift_id: int) -> None:
+        self.db.execute("DELETE FROM shifts WHERE shift_id = ?", (shift_id,))
+
+    # -- assignment ----------------------------------------------------------
+    def count_members(self, shift_id: int) -> int:
+        return int(
+            self.db.scalar(
+                "SELECT COUNT(*) FROM employee_shifts WHERE shift_id = ?", (shift_id,)
+            )
+        )
+
+    def assignment_for(self, employee_id: int):
+        return self.db.query_one(
+            "SELECT s.* FROM employee_shifts a JOIN shifts s ON s.shift_id = a.shift_id "
+            "WHERE a.employee_id = ?",
+            (employee_id,),
+        )
+
+    def assigned_shift_id(self, employee_id: int) -> int | None:
+        row = self.db.query_one(
+            "SELECT shift_id FROM employee_shifts WHERE employee_id = ?", (employee_id,)
+        )
+        return int(row["shift_id"]) if row else None
+
+    def set_assignment(self, employee_id: int, shift_id: int | None) -> None:
+        if shift_id is None:
+            self.db.execute(
+                "DELETE FROM employee_shifts WHERE employee_id = ?", (employee_id,)
+            )
+            return
+        self.db.execute(
+            "INSERT INTO employee_shifts (employee_id, shift_id, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(employee_id) DO UPDATE SET shift_id = excluded.shift_id, "
+            "updated_at = excluded.updated_at",
+            (employee_id, shift_id, utc_now()),
+        )
+
+    def assignments_map(self) -> dict[int, int]:
+        """Every assignment at once: employee_id -> shift_id."""
+        rows = self.db.query("SELECT employee_id, shift_id FROM employee_shifts")
+        return {int(row["employee_id"]): int(row["shift_id"]) for row in rows}
+
+
 class SettingsRepository:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -998,6 +1076,7 @@ class Repositories:
         self.attendance = AttendanceRepository(db)
         self.settings = SettingsRepository(db)
         self.qr_tokens = QRTokenRepository(db)
+        self.shifts = ShiftRepository(db)
         self.audit = AuditLogRepository(db)
 
 
@@ -1028,6 +1107,7 @@ __all__ = [
     "QRTokenRepository",
     "Repositories",
     "SettingsRepository",
+    "ShiftRepository",
     "app_version",
     "daterange",
     "default_goal_minutes",
