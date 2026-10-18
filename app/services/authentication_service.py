@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from app.database.repositories import Repositories, utc_now
-from app.models.admin import Admin, AdminSession
+from app.models.admin import ROLE_ADMIN, ROLES, Admin, AdminSession, role_label
 from app.models.audit import (
     ACTION_LOGIN,
     ACTION_LOGIN_FAILED,
@@ -67,22 +67,29 @@ class AuthenticationService:
         confirm_password: str = "",
         full_name: str = "",
         is_first: bool = False,
+        role: str = ROLE_ADMIN,
     ) -> Admin:
         clean_username = validate_username(username)
         validate_password(password, confirm_password or password)
+        if role not in ROLES:
+            raise AuthenticationError(f"Unknown account type '{role}'.", "unknown_role")
         if self.repos.admins.get_by_username(clean_username):
             raise AuthenticationError(
                 f"The username '{clean_username}' is already taken.", "duplicate_username"
             )
         name = require_text(full_name, "Full name", 120) if full_name.strip() else ""
         password_hash = hash_password(password)
-        admin_id = self.repos.admins.create(clean_username, password_hash, name)
+        admin_id = self.repos.admins.create(clean_username, password_hash, name, role)
         self.repos.audit.log(
             ACTION_SETUP if is_first else ACTION_LOGIN,
             admin_username=clean_username,
             entity_type="admin",
             entity_id=admin_id,
-            description=f"Created administrator account '{clean_username}'",
+            description=(
+                f"Created {role_label(role).lower()} account '{clean_username}'"
+                if not is_first
+                else f"Created administrator account '{clean_username}'"
+            ),
             severity=SEVERITY_INFO,
         )
         admin = self.repos.admins.get_by_id(admin_id)
@@ -218,6 +225,16 @@ class AuthenticationService:
         if self._session is None:
             raise AuthenticationError("You must sign in first.", "not_authenticated")
         return self._session
+
+    def require_change_rights(self) -> AdminSession:
+        """A session that may change anything: editors only, never viewers."""
+        session = self.require_session()
+        if session.role != ROLE_ADMIN:
+            raise AuthenticationError(
+                "Viewer accounts can look, not change. Ask an administrator.",
+                "viewer_readonly",
+            )
+        return session
 
     # -- account management --------------------------------------------------
     def change_password(

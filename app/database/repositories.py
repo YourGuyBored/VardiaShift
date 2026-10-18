@@ -22,6 +22,7 @@ from app.models.attendance import (
     AttendanceRecord,
 )
 from app.models.audit import AuditLog
+from app.models.admin import ROLE_ADMIN
 from app.models.employee import Employee
 from app.models.qr_token import QRToken
 
@@ -55,12 +56,12 @@ class AdminRepository:
     def has_admin(self) -> bool:
         return self.count() > 0
 
-    def create(self, username: str, password_hash: str, full_name: str = "") -> int:
+    def create(self, username: str, password_hash: str, full_name: str = "", role: str = ROLE_ADMIN) -> int:
         now = utc_now()
         return self.db.insert_returning_id(
-            "INSERT INTO admins (username, password_hash, full_name, is_active, created_at, updated_at) "
-            "VALUES (?, ?, ?, 1, ?, ?)",
-            (username, password_hash, full_name, now, now),
+            "INSERT INTO admins (username, password_hash, full_name, role, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 1, ?, ?)",
+            (username, password_hash, full_name, role, now, now),
         )
 
     def get_by_username(self, username: str):

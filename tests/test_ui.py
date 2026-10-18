@@ -968,6 +968,65 @@ def test_admin_page_saves_profile(context, qt_app, admin_session):
     assert page._table.rowCount() == 1
 
 
+def test_admin_page_adds_a_viewer_account(context, qt_app, admin_session):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.admin_account import AddAccountDialog, AdminAccountPage
+    from app.ui.widgets import Select
+
+    dialog = AddAccountDialog(context)
+    assert isinstance(dialog._role, Select)
+    dialog._username.setText("watcher")
+    dialog._full_name.setText("The Watcher")
+    dialog._new.setText("Sup3rSecret!")
+    dialog._confirm.setText("Sup3rSecret!")
+    viewer_index = next(
+        i for i in range(dialog._role.count()) if dialog._role.itemData(i) == "viewer"
+    )
+    dialog._role.setCurrentIndex(viewer_index)
+    dialog._on_save()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+    created = context.repositories.admins.get_by_username("watcher")
+    assert created["role"] == "viewer"
+
+    page = AdminAccountPage(context)
+    usernames = [
+        page._table.item(row, 0).text() for row in range(page._table.rowCount())
+    ]
+    assert "watcher" in usernames
+    row = usernames.index("watcher")
+    assert page._table.item(row, 2).text() == "Viewer"
+
+
+def test_add_account_dialog_refuses_a_duplicate_username(context, qt_app, admin_session):
+    from app.ui.admin_account import AddAccountDialog
+
+    dialog = AddAccountDialog(context)
+    dialog._username.setText("admin")
+    dialog._new.setText("Sup3rSecret!")
+    dialog._confirm.setText("Sup3rSecret!")
+    dialog._on_save()
+    assert not dialog._error.isHidden()
+
+
+def test_a_viewer_session_sees_only_the_read_only_nav(context, qt_app):
+    from app.ui.main_window import VIEWER_NAV_ITEMS, Sidebar
+
+    viewer = context.authentication.create_admin(
+        "watcher", "Sup3rSecret!", "Sup3rSecret!", "The Watcher", role="viewer"
+    )
+    context.authentication.authenticate("watcher", "Sup3rSecret!")
+
+    sidebar = Sidebar(context.organization_name, viewer.display_name, "viewer")
+    assert tuple(sidebar._buttons.keys()) == ("dashboard", "reports") == VIEWER_NAV_ITEMS
+    sidebar.deleteLater()
+
+    sidebar_admin = Sidebar(context.organization_name, "admin", "admin")
+    assert "employees" in sidebar_admin._buttons and "settings" in sidebar_admin._buttons
+    sidebar_admin.deleteLater()
+
+
 # -- kiosk -------------------------------------------------------------------
 def test_kiosk_manual_picker_lists_employees(context, qt_app, team):
     from app.qr.scanner import ManualEntryDialog

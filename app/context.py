@@ -13,7 +13,7 @@ from app.constants import APP_NAME, APP_VERSION
 from app.database.database import Database
 from app.database.migrations import SCHEMA_VERSION, migrate
 from app.database.repositories import Repositories
-from app.models.admin import AdminSession
+from app.models.admin import AdminSession, ROLE_ADMIN
 from app.services.attendance_service import AttendanceService
 from app.services.authentication_service import AuthenticationService
 from app.services.backup_service import BackupService
@@ -102,8 +102,13 @@ class ApplicationContext:
         """Username of the signed-in administrator (``"system"`` when signed out)."""
         return self.authentication.current_username
 
+    @property
+    def current_role(self) -> str:
+        """Account type of the signed-in account (``"admin"`` when signed out)."""
+        return self.authentication.session.role if self.authentication.session else ROLE_ADMIN
+
     def require_admin(self) -> str:
-        session = self.authentication.require_session()
+        session = self.authentication.require_change_rights()
         return session.username
 
     def shutdown(self) -> None:

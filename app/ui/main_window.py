@@ -36,6 +36,10 @@ NAV_ITEMS = [
     ("admin", "Admin Account"),
 ]
 
+#: What a read-only Viewer account sees. Dashboard and reports, nothing
+#: that writes.
+VIEWER_NAV_ITEMS = ("dashboard", "reports")
+
 
 class Sidebar(QFrame):
     """The rail: identity, navigation, the kiosk, and who is signed in.
@@ -51,10 +55,13 @@ class Sidebar(QFrame):
 
     WIDTH = 236
 
-    def __init__(self, organization: str, username: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, organization: str, username: str, role: str = "admin", parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("Sidebar")
         self.setFixedWidth(self.WIDTH)
+        self.role = role
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -70,6 +77,8 @@ class Sidebar(QFrame):
 
         self._buttons: dict[str, QPushButton] = {}
         for key, label in NAV_ITEMS:
+            if role != "admin" and key not in VIEWER_NAV_ITEMS:
+                continue
             button = QPushButton(label)
             button.setObjectName("NavButton")
             button.setCheckable(True)
@@ -178,6 +187,7 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar(
             context.organization_name,
             admin.display_name if admin else "admin",
+            admin.role if admin else "admin",
         )
         self.sidebar.navigate.connect(self.show_page)
         self.sidebar.logout.connect(self._confirm_logout)

@@ -7,6 +7,19 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Viewer role**: a read-only account type. On the Admin Account page,
+  **Add account** creates an Administrator or a Viewer; a Viewer signs in
+  like anybody else, sees only the dashboard and the reports, and the
+  sidebar simply has no other buttons. Every write path goes through one
+  check that a Viewer session fails with a clear message, so read-only
+  holds even if some other door opens later. Accounts are audited on
+  creation and the account list shows the role column.
+  Files: `app/database/migrations.py`, `app/database/repositories.py`,
+  `app/models/admin.py`, `app/services/authentication_service.py`,
+  `app/context.py`, `app/ui/main_window.py`, `app/ui/admin_account.py`,
+  `tests/test_viewer_role.py`, `tests/test_ui.py`, `README.md`,
+  `CHANGELOG.md`.
+
 * **Print-ready PDF reports**: the Reports page has Save PDF and Print
   buttons next to the CSV and XLSX ones. Both render the generated
   report (title, summary and table, totals row bold) through Qt's own

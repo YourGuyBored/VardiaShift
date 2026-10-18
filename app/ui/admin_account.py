@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.models.admin import ROLES, role_label
 from app.services.authentication_service import AuthenticationError
 from app.ui import theme
 from app.ui.widgets import (
     ActiveBadge,
     Card,
     PrimaryButton,
+    Select,
     badge_cell,
     clear_table_widgets,
     elide_headers,
@@ -32,7 +34,7 @@ from app.ui.widgets import (
 from app.ui.window_sizing import fit_to_screen
 from app.utils.validation import ValidationError, password_strength, validate_password
 
-ADMIN_COLUMNS = ["Username", "Full name", "Last sign-in", "Status"]
+ADMIN_COLUMNS = ["Username", "Full name", "Role", "Last sign-in", "Status"]
 STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"]
 STRENGTH_COLORS = [theme.DANGER, theme.DANGER, theme.WARNING, theme.PRIMARY, theme.SUCCESS]
 
@@ -127,6 +129,86 @@ class PasswordDialog(QDialog):
         self.accept()
 
 
+class AddAccountDialog(QDialog):
+    """Create an administrator or Viewer account."""
+
+    def __init__(self, context, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.context = context
+        self.created: object | None = None
+        self.setWindowTitle("Add account")
+        fit_to_screen(self, (460, 0))
+
+        self._username = QLineEdit()
+        self._username.setMinimumHeight(40)
+        self._full_name = QLineEdit()
+        self._full_name.setMinimumHeight(40)
+        self._role = Select()
+        for value in ROLES:
+            self._role.addItem(role_label(value), value)
+        self._role.setToolTip(
+            "Viewer accounts see the dashboard and reports and change nothing."
+        )
+        self._new = QLineEdit()
+        self._new.setEchoMode(QLineEdit.EchoMode.Password)
+        self._confirm = QLineEdit()
+        self._confirm.setEchoMode(QLineEdit.EchoMode.Password)
+        self._strength = QLabel("")
+        self._strength.setStyleSheet(f"font-size: 11px; font-weight: 700;")
+        self._error = QLabel("")
+        self._error.setProperty("role", "error")
+        self._error.hide()
+        self._new.textChanged.connect(self._update_strength)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Create account")
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(12)
+        layout.addWidget(QLabel("Username"))
+        layout.addWidget(self._username)
+        layout.addWidget(QLabel("Full name"))
+        layout.addWidget(self._full_name)
+        layout.addWidget(QLabel("Account type"))
+        layout.addWidget(self._role)
+        layout.addWidget(QLabel("Password"))
+        layout.addWidget(self._new)
+        layout.addWidget(self._confirm)
+        layout.addWidget(self._strength)
+        layout.addWidget(self._error)
+        layout.addWidget(buttons)
+
+    def _update_strength(self, text: str) -> None:
+        score = password_strength(text)
+        self._strength.setText(STRENGTH_LABELS[score] if text else "")
+        self._strength.setStyleSheet(
+            f"color: {STRENGTH_COLORS[score]}; font-size: 11px; font-weight: 700;"
+        )
+
+    def _on_save(self) -> None:
+        try:
+            # Creating an account writes to the database; a Viewer session
+            # must be stopped here even if the page were somehow open.
+            self.context.require_admin()
+            self.created = self.context.authentication.create_admin(
+                self._username.text(),
+                self._new.text(),
+                self._confirm.text(),
+                self._full_name.text(),
+                role=self._role.currentData(),
+            )
+        except (AuthenticationError, ValidationError) as exc:
+            self._error.setText(getattr(exc, "message", str(exc)))
+            self._error.show()
+            return
+        self.accept()
+
+
 class AdminAccountPage(QWidget):
     """Profile, password and administrator list."""
 
@@ -193,6 +275,11 @@ class AdminAccountPage(QWidget):
         root.addLayout(columns)
 
         admins = Card("Administrator accounts", "")
+        add_row = QHBoxLayout()
+        add_row.addStretch(1)
+        add_button = PrimaryButton("Add account", self._open_add_account)
+        add_row.addWidget(add_button)
+        admins.add_layout(add_row)
         self._table = QTableWidget(0, len(ADMIN_COLUMNS))
         self._table.setHorizontalHeaderLabels(ADMIN_COLUMNS)
         self._table.verticalHeader().setVisible(False)
@@ -259,6 +346,17 @@ class AdminAccountPage(QWidget):
                 "Your new password is active. Use it the next time you sign in.",
             )
 
+    def _open_add_account(self) -> None:
+        dialog = AddAccountDialog(self.context, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.created is not None:
+            kind = role_label(dialog.created.role).lower()
+            self.refresh()
+            QMessageBox.information(
+                self,
+                "Account created",
+                f"The {kind} account '{dialog.created.username}' is ready to use.",
+            )
+
     # -- data ----------------------------------------------------------------
     def refresh(self) -> None:
         admin = self.context.authentication.current_admin
@@ -298,12 +396,13 @@ class AdminAccountPage(QWidget):
             values = [
                 record.username,
                 record.full_name or "-",
+                role_label(record.role),
                 clock.format_datetime(record.last_login_at) if record.last_login_at else "Never",
             ]
             for column, value in enumerate(values):
                 self._table.setItem(index, column, QTableWidgetItem(value))
             badge = ActiveBadge(record.is_active)
-            self._table.setCellWidget(index, 3, badge_cell(badge))
+            self._table.setCellWidget(index, 4, badge_cell(badge))
 
 
-__all__ = ["ADMIN_COLUMNS", "AdminAccountPage", "PasswordDialog"]
+__all__ = ["ADMIN_COLUMNS", "AddAccountDialog", "AdminAccountPage", "PasswordDialog"]

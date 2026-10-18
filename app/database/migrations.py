@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.constants import APP_VERSION
 from app.database.database import Database, utc_now
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS admins (
     username        TEXT NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
     full_name       TEXT NOT NULL DEFAULT '',
+    role            TEXT NOT NULL DEFAULT 'admin',
     is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
@@ -309,6 +310,16 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
                 UNIQUE (employee_id, leave_date)
             )""",
             """CREATE INDEX IF NOT EXISTS idx_leave_days_date ON leave_days (leave_date)""",
+        ],
+    ),
+    (
+        10,
+        [
+            # The Viewer account type. Read-only: dashboard and reports
+            # only. Existing accounts are administrators, so nothing about
+            # a database upgraded in place changes until somebody asks for
+            # a viewer account.
+            """ALTER TABLE admins ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'""",
         ],
     ),
 ]

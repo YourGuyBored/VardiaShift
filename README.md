@@ -435,9 +435,12 @@ Custom-range filters.
 The original values stay in the **audit log** with your username, old value,
 new value and reason. Nothing is ever silently overwritten.
 
-**Reports** - daily, weekly, monthly and custom-range reports, optionally per
-employee, exported as **CSV** (always), **XLSX**, or sent straight to
-**Google Sheets** (see below).
+**Reports** - daily, weekly, monthly, payroll and custom-range reports,
+optionally per employee, exported as **CSV** (always), **XLSX**, **PDF** (Save
+PDF and Print on the same toolbar), or sent straight to **Google Sheets** (see
+below). The payroll summary lets you pick any date range and lists one row per
+employee: days worked, hours in both text and decimal form, approved leave
+days and late arrivals.
 
 **Report templates** - a template decides which columns an export has, in what
 order, what each is called, how wide it is, and whether a duration is written as
@@ -466,6 +469,12 @@ in the database.
 from a file, automatic verification before restoring, and an automatic safety
 copy of the current database first. Restoring signs you out so you sign back
 in against the restored data.
+
+**Accounts** - every account signs in the same way. An **Administrator** can
+change everything. A **Viewer** is read-only: the dashboard and the reports,
+nothing else, and the buttons that write are simply not on its sidebar. Add
+accounts on the Admin Account page under **Add account**, where you pick the
+account type.
 
 ---
 
@@ -652,8 +661,9 @@ VardiaShift is being built out in stages. Roughly in order:
   the Payroll summary report type, with any date range the admin picks.
 * ~~Print-ready PDF reports (daily, weekly, monthly, per employee)~~ done:
   Save PDF and Print buttons on the Reports page.
-* A read-only "Viewer" account type that can see the dashboard and reports
-  but change nothing.
+* ~~A read-only "Viewer" account type that can see the dashboard and reports
+  but change nothing~~ done: Add account on the Admin Account page, with the
+  Administrator or Viewer choice.
 * Optional kiosk photo on every scan (off by default, kept locally) and an
   English / Filipino language toggle.
 
