@@ -26,6 +26,9 @@ ACTION_SHIFT_ADD = "shift_add"
 ACTION_SHIFT_EDIT = "shift_edit"
 ACTION_SHIFT_DELETE = "shift_delete"
 ACTION_SHIFT_ASSIGN = "shift_assign"
+ACTION_LEAVE_ADD = "leave_add"
+ACTION_LEAVE_EDIT = "leave_edit"
+ACTION_LEAVE_DELETE = "leave_delete"
 
 ACTION_LABELS = {
     ACTION_LOGIN: "Signed in",
@@ -50,6 +53,9 @@ ACTION_LABELS = {
     ACTION_SHIFT_EDIT: "Shift edited",
     ACTION_SHIFT_DELETE: "Shift deleted",
     ACTION_SHIFT_ASSIGN: "Shift assigned",
+    ACTION_LEAVE_ADD: "Leave recorded",
+    ACTION_LEAVE_EDIT: "Leave edited",
+    ACTION_LEAVE_DELETE: "Leave removed",
 }
 
 SEVERITY_INFO = "info"

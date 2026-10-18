@@ -18,6 +18,7 @@ from app.services.attendance_service import AttendanceService
 from app.services.authentication_service import AuthenticationService
 from app.services.backup_service import BackupService
 from app.services.employee_service import EmployeeService
+from app.services.leave_service import LeaveService
 from app.services.qr_service import QRCodeManager
 from app.services.report_service import ReportService
 from app.services.settings_service import SettingsService
@@ -46,6 +47,7 @@ class ApplicationContext:
         self.authentication = AuthenticationService(self.repositories)
         self.employees = EmployeeService(self.repositories)
         self.shifts = ShiftService(self.repositories)
+        self.leave = LeaveService(self.repositories)
         self.attendance = AttendanceService(self.repositories, self.settings)
         self.reports = ReportService(self.attendance, self.settings)
         self.backups = BackupService(

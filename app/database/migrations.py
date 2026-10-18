@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.constants import APP_VERSION
 from app.database.database import Database, utc_now
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS employee_shifts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_employee_shifts_shift ON employee_shifts (shift_id);
+
+CREATE TABLE IF NOT EXISTS leave_days (
+    leave_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL
+                REFERENCES employees (employee_id) ON DELETE CASCADE,
+    leave_date  TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE (employee_id, leave_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_leave_days_date ON leave_days (leave_date);
 
 CREATE TABLE IF NOT EXISTS attendance (
     attendance_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -273,6 +287,28 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
                 updated_at  TEXT NOT NULL
             )""",
             """CREATE INDEX IF NOT EXISTS idx_employee_shifts_shift ON employee_shifts (shift_id)""",
+        ],
+    ),
+    (
+        9,
+        [
+            # Approved leave, one row per employee per day, so ranges are
+            # expanded by the service and can never overlap invisibly. The
+            # table starts empty: nobody is on leave who was not on leave
+            # yesterday, and a leave day simply means the day's schedule
+            # stands down (no late/absent flags, nothing to patch).
+            """CREATE TABLE IF NOT EXISTS leave_days (
+                leave_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL
+                             REFERENCES employees (employee_id) ON DELETE CASCADE,
+                leave_date  TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                note        TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                UNIQUE (employee_id, leave_date)
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_leave_days_date ON leave_days (leave_date)""",
         ],
     ),
 ]

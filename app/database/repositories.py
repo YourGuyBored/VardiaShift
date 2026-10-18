@@ -818,6 +818,77 @@ class ShiftRepository:
         return {int(row["employee_id"]): int(row["shift_id"]) for row in rows}
 
 
+SELECT_LEAVE = (
+    "SELECT a.leave_id, a.employee_id, a.leave_date, a.kind, a.note, "
+    "a.created_at, a.updated_at, "
+    "e.employee_code, e.full_name "
+    "FROM leave_days a JOIN employees e ON e.employee_id = a.employee_id"
+)
+
+
+class LeaveRepository:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def for_employee(
+        self, employee_id: int, start: str = "", end: str = ""
+    ) -> list:
+        sql = f"{SELECT_LEAVE} WHERE a.employee_id = ?"
+        params: list[Any] = [employee_id]
+        if start:
+            sql += " AND a.leave_date >= ?"
+            params.append(start)
+        if end:
+            sql += " AND a.leave_date <= ?"
+            params.append(end)
+        sql += " ORDER BY a.leave_date"
+        return self.db.query(sql, tuple(params))
+
+    def for_date(self, leave_date: str) -> dict[int, dict]:
+        """Everyone who is off that day, keyed on employee_id."""
+        rows = self.db.query(
+            f"{SELECT_LEAVE} WHERE a.leave_date = ?", (leave_date,)
+        )
+        return {int(row["employee_id"]): row for row in rows}
+
+    def for_range(self, start: str, end: str) -> dict[tuple[int, str], dict]:
+        """Whole-window leave at once: (employee_id, date) -> row."""
+        rows = self.db.query(
+            f"{SELECT_LEAVE} WHERE a.leave_date >= ? AND a.leave_date <= ?",
+            (start, end),
+        )
+        return {
+            (int(row["employee_id"]), row["leave_date"]): row for row in rows
+        }
+
+    def on_date(self, employee_id: int, leave_date: str):
+        return self.db.query_one(
+            f"{SELECT_LEAVE} WHERE a.employee_id = ? AND a.leave_date = ?",
+            (employee_id, leave_date),
+        )
+
+    def set_day(
+        self, employee_id: int, leave_date: str, kind: str, note: str
+    ) -> int:
+        now = utc_now()
+        return self.db.insert_returning_id(
+            "INSERT INTO leave_days (employee_id, leave_date, kind, note, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(employee_id, leave_date) DO UPDATE SET "
+            "kind = excluded.kind, note = excluded.note, updated_at = excluded.updated_at",
+            (employee_id, leave_date, kind, note, now, now),
+        )
+
+    def clear_day(self, employee_id: int, leave_date: str) -> None:
+        self.db.execute(
+            "DELETE FROM leave_days WHERE employee_id = ? AND leave_date = ?",
+            (employee_id, leave_date),
+        )
+
+    def count(self) -> int:
+        return int(self.db.scalar("SELECT COUNT(*) FROM leave_days"))
+
+
 class SettingsRepository:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -1077,6 +1148,7 @@ class Repositories:
         self.settings = SettingsRepository(db)
         self.qr_tokens = QRTokenRepository(db)
         self.shifts = ShiftRepository(db)
+        self.leave = LeaveRepository(db)
         self.audit = AuditLogRepository(db)
 
 
@@ -1104,6 +1176,7 @@ __all__ = [
     "AttendanceRepository",
     "AuditLogRepository",
     "EmployeeRepository",
+    "LeaveRepository",
     "QRTokenRepository",
     "Repositories",
     "SettingsRepository",
