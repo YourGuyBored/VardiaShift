@@ -7,6 +7,15 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **Print-ready PDF reports**: the Reports page has Save PDF and Print
+  buttons next to the CSV and XLSX ones. Both render the generated
+  report (title, summary and table, totals row bold) through Qt's own
+  PDF writer, so there is nothing extra to install and the daily,
+  weekly, monthly, payroll and custom-range reports all print. Cell
+  values are escaped before they reach the document.
+  Files: `app/services/report_service.py`, `app/ui/reports.py`,
+  `tests/test_report_pdf.py`.
+
 * **Payroll summary export**: a new report type on the Reports page. The
   admin picks any date range - weekly, semi-monthly or monthly pay all
   come out of the same export - and gets one row per employee: days

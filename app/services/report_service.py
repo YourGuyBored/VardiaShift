@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import html as html_
 import io
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as _time, timedelta
@@ -946,6 +947,55 @@ class ReportService:
 
 def clock_format(minutes: int) -> str:
     return TimeUtils.format_duration(minutes)
+
+
+# -- PDF / print document -----------------------------------------------------
+def report_to_html(report: ReportResult) -> str:
+    """Stand-alone HTML for the print and PDF buttons on the Reports page.
+
+    Pure string building so it stays testable without a QApplication. Cell
+    values are escaped: an employee named ``<script>`` must reach paper as
+    text, not markup.
+    """
+    esc = lambda value: html_.escape(
+        value if isinstance(value, str) else "" if value is None else str(value)
+    )
+    summary = ""
+    if report.summary:
+        summary = " &nbsp;&nbsp; ".join(
+            f"<b>{html_.escape(label)}:</b> {html_.escape(value)}"
+            for label, value in report.summary
+        )
+    head = "".join(f"<th>{html_.escape(col)}</th>" for col in report.headers)
+    body_rows = "".join(
+        "<tr>" + "".join(f"<td>{esc(value)}</td>" for value in row) + "</tr>"
+        for row in report.rows
+    )
+    foot = ""
+    if report.totals:
+        foot = (
+            "<tr class='tot'>"
+            + "".join(f"<td>{esc(value)}</td>" for value in report.totals)
+            + "</tr>"
+        )
+    return (
+        "<html><head><style>"
+        "body { font-family: 'Segoe UI', 'Noto Sans', sans-serif; font-size: 11px; color: #1a1a1a; }"
+        "h1 { font-size: 17px; margin: 0 0 2px 0; }"
+        "p.sub { color: #555; margin: 0 0 10px 0; }"
+        "p.sum { margin: 0 0 10px 0; }"
+        "table { border-collapse: collapse; width: 100%; }"
+        "th { text-align: left; border-bottom: 2px solid #333; padding: 3px 6px; }"
+        "td { border-bottom: 1px solid #ddd; padding: 3px 6px; }"
+        "tr.tot td { border-top: 2px solid #333; border-bottom: none; font-weight: bold; }"
+        "</style></head><body>"
+        f"<h1>{html_.escape(report.title)}</h1>"
+        f"<p class='sub'>{html_.escape(report.subtitle)}</p>"
+        + (f"<p class='sum'>{summary}</p>" if summary else "")
+        + f"<table><thead><tr>{head}</tr></thead>"
+        f"<tbody>{body_rows}</tbody>{'<tfoot>' + foot + '</tfoot>' if foot else ''}"
+        "</table></body></html>"
+    )
 
 
 def _minutes_of_day(value: str) -> int:

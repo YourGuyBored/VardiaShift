@@ -650,7 +650,8 @@ VardiaShift is being built out in stages. Roughly in order:
   by day, late arrivals this week, and recorded hours by department.
 * ~~Payroll export: hours per pay period per employee as CSV/XLSX~~ done:
   the Payroll summary report type, with any date range the admin picks.
-* Print-ready PDF reports (daily, weekly, monthly, per employee).
+* ~~Print-ready PDF reports (daily, weekly, monthly, per employee)~~ done:
+  Save PDF and Print buttons on the Reports page.
 * A read-only "Viewer" account type that can see the dashboard and reports
   but change nothing.
 * Optional kiosk photo on every scan (off by default, kept locally) and an

@@ -29,7 +29,7 @@ from app.services.report_import import (
     apply_attendance_import,
     plan_attendance_import,
 )
-from app.services.report_service import XLSX_AVAILABLE
+from app.services.report_service import XLSX_AVAILABLE, report_to_html
 from app.ui import theme
 from app.ui.report_dialogs import ImportPreviewDialog, TemplateEditorDialog, pick_spreadsheet
 from app.ui.widgets import Card, EmptyState, PrimaryButton, Select, elide_headers
@@ -170,6 +170,14 @@ class ReportsPage(QWidget):
                 "XLSX export needs the 'openpyxl' package. CSV export always works."
             )
         buttons.addWidget(self._xlsx_button)
+
+        self._pdf_button = PrimaryButton("Save PDF", self._export_pdf)
+        buttons.addWidget(self._pdf_button)
+
+        self._print_button = QPushButton("Print")
+        self._print_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._print_button.clicked.connect(self._print_report)
+        buttons.addWidget(self._print_button)
 
         folder = QPushButton("Open exports folder")
         folder.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -495,6 +503,43 @@ class ReportsPage(QWidget):
         )
         QMessageBox.information(self, "Import finished", f"{changed} record(s) written.")
         self.generate()
+
+    def _export_pdf(self) -> None:
+        if self._report is None or self._report.is_empty:
+            QMessageBox.information(self, "Nothing to export", "Generate a report first.")
+            return
+        from PySide6.QtGui import QTextDocument
+        from PySide6.QtPrintSupport import QPrinter
+
+        name = self.context.reports.suggest_filename(self._report, "pdf")
+        default = str(self.context.backups.exports_dir() / name)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save PDF", default, "PDF files (*.pdf)"
+        )
+        if not path:
+            return
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(path)
+        document = QTextDocument()
+        document.setHtml(report_to_html(self._report))
+        document.print_(printer)
+        QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
+
+    def _print_report(self) -> None:
+        if self._report is None or self._report.is_empty:
+            QMessageBox.information(self, "Nothing to print", "Generate a report first.")
+            return
+        from PySide6.QtGui import QTextDocument
+        from PySide6.QtPrintSupport import QPrinter, QPrintDialog
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        dialog = QPrintDialog(printer, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        document = QTextDocument()
+        document.setHtml(report_to_html(self._report))
+        document.print_(printer)
 
     # -- export --------------------------------------------------------------
     def _export_csv(self) -> None:
