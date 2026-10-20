@@ -28,6 +28,26 @@ All notable changes to VardiaShift are documented here. The format follows
   `app/ui/settings.py`, `tests/test_phone.py`, `tests/test_ui.py`,
   `README.md`, `CHANGELOG.md`.
 
+### Changed
+
+* **Refreshes are quiet when nothing changed**: the dashboard used to clear
+  and rebuild every row on its thirty-second timer, on every page switch and
+  on every minute tick, even when no clock had moved. At three hundred
+  employees that was a third of a second of frozen window each time. The
+  dashboard and employee list now fingerprint the cells they would draw and
+  skip the rebuild when the fingerprint matches, and the dashboard timer
+  stops while the page is hidden. Attendance resolves schedule labels in one
+  batch instead of two reads per row, leaves its Today table alone when the
+  records have not changed, and loads the audit tab only when that tab is
+  opened. The minute tick no longer resets the date or range an administrator
+  picked, and no longer regenerates a report with a chosen From/To range.
+  Measured on a 300-employee, 12,000-record database: dashboard refresh
+  268 ms to 28 ms, employee list refresh 226 ms to 6 ms, attendance page
+  construction 319 ms to 241 ms.
+  Files: `app/services/attendance_service.py`, `app/ui/attendance_view.py`,
+  `app/ui/dashboard.py`, `app/ui/employee_management.py`,
+  `app/ui/main_window.py`, `tests/test_performance.py`, `CHANGELOG.md`.
+
 ## [1.5.0] - 2026-10-18
 
 ### Added

@@ -51,6 +51,9 @@ class DashboardPage(QWidget):
 
     employee_selected = Signal(int)
 
+    #: The one-minute window tick refreshes this page; see MainWindow.
+    follows_clock = True
+
     def __init__(self, context, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
@@ -116,9 +119,20 @@ class DashboardPage(QWidget):
         self._timer = QTimer(self)
         self._timer.setInterval(30_000)
         self._timer.timeout.connect(self.refresh)
+        # The timer runs only while the page is on screen: a hidden dashboard
+        # rebuilt its table every thirty seconds for nobody.
+
+        self._table_key = None
+        self.refresh()
+
+    # -- visibility ----------------------------------------------------------
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().showEvent(event)
         self._timer.start()
 
-        self.refresh()
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().hideEvent(event)
+        self._timer.stop()
 
     # -- header --------------------------------------------------------------
     def _header(self) -> QHBoxLayout:
@@ -415,6 +429,38 @@ class DashboardPage(QWidget):
         if self._filter != "all":
             rows = [row for row in rows if row.status == self._filter]
 
+        sample_available = sample_data.has_sample_data(self.context)
+        # Cell creation dominates a dashboard paint on a full roster. Keep a
+        # fingerprint of exactly what would be drawn: the timer and every
+        # page switch used to clear and rebuild the whole table even when
+        # nothing had moved.
+        key = (
+            self._search,
+            self._filter,
+            tuple(
+                (
+                    row.employee.employee_id,
+                    row.employee.full_name,
+                    row.employee.employee_code,
+                    row.employee.department or "",
+                    row.status,
+                    row.time_in,
+                    row.time_out,
+                    row.today_text,
+                    row.week_text,
+                    row.goal_text,
+                    row.source,
+                    row.schedule,
+                )
+                for row in rows
+            ),
+            bool(summary.rows),
+            sample_available,
+        )
+        if key == self._table_key:
+            return
+        self._table_key = key
+
         clear_table_widgets(self._table)
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):
@@ -462,7 +508,7 @@ class DashboardPage(QWidget):
         self._empty.setVisible(not rows and not summary.rows)
         if not summary.rows:
             self._empty.setVisible(True)
-        self._sample_button.setVisible(sample_data.has_sample_data(self.context))
+        self._sample_button.setVisible(sample_available)
 
 
 __all__ = ["COLUMNS", "DashboardPage"]

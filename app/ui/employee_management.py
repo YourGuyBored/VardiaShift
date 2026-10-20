@@ -322,6 +322,7 @@ class EmployeePage(QWidget):
         self.context = context
         self._search = ""
         self._status_filter = ""
+        self._table_key = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(26, 22, 26, 22)
@@ -636,10 +637,44 @@ class EmployeePage(QWidget):
         clock = self.context.clock
         default_goal = self.context.settings.settings.default_weekly_goal_hours
 
+        rows = [
+            (
+                employee,
+                employee.goal_hours(default_goal),
+                clock.format_date(employee.date_added),
+            )
+            for employee in employees
+        ]
+        # Searching, filtering and switching pages all pass through here.
+        # Only rebuild the cells when something they show has changed.
+        key = (
+            self._search,
+            self._status_filter,
+            department,
+            default_goal,
+            tuple(
+                (
+                    employee.employee_id,
+                    employee.employee_code,
+                    employee.full_name,
+                    employee.department or "",
+                    employee.position or "",
+                    employee.badge_code or "",
+                    employee.is_active,
+                    added,
+                    goal_hours,
+                    employee.has_own_goal,
+                )
+                for employee, goal_hours, added in rows
+            ),
+        )
+        if key == self._table_key:
+            return
+        self._table_key = key
+
         clear_table_widgets(self._table)
-        self._table.setRowCount(len(employees))
-        for index, employee in enumerate(employees):
-            goal_hours = employee.goal_hours(default_goal)
+        self._table.setRowCount(len(rows))
+        for index, (employee, goal_hours, added) in enumerate(rows):
             values = [
                 employee.employee_code,
                 employee.full_name,
@@ -656,7 +691,7 @@ class EmployeePage(QWidget):
             self._table.setCellWidget(index, 5, badge_cell(badge))
 
             for column, value in (
-                (6, clock.format_date(employee.date_added)),
+                (6, added),
                 (7, f"{goal_hours}h/week" + ("" if employee.has_own_goal else " (default)")),
             ):
                 cell = QTableWidgetItem(value)
@@ -666,8 +701,8 @@ class EmployeePage(QWidget):
                     )
                 self._table.setItem(index, column, cell)
 
-        self._table.setVisible(bool(employees))
-        self._empty.setVisible(not employees)
+        self._table.setVisible(bool(rows))
+        self._empty.setVisible(not rows)
 
 
 __all__ = ["COLUMNS", "EmployeeDialog", "EmployeePage"]

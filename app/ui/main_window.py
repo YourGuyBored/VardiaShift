@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
 
         self._refresh_clock = QTimer(self)
         self._refresh_clock.setInterval(60_000)
-        self._refresh_clock.timeout.connect(self.refresh_current)
+        self._refresh_clock.timeout.connect(self._on_clock_tick)
         self._refresh_clock.start()
 
         self.statusBar().showMessage(f"Data folder: {context.paths.root}")
@@ -235,6 +235,25 @@ class MainWindow(QMainWindow):
 
     def refresh_current(self) -> None:
         widget = self._pages.get(self._current_key)
+        refresh = getattr(widget, "refresh", None)
+        if callable(refresh):
+            refresh()
+
+    def _on_clock_tick(self) -> None:
+        """Refresh live pages only, once a minute.
+
+        The old tick refreshed whatever page was open. On the Reports page
+        that reset the chosen From/To range back to this week and rebuilt the
+        report every minute, even though nobody had asked for a new one. A
+        page opts in with ``follows_clock = True``.
+        """
+        widget = self._pages.get(self._current_key)
+        if widget is None or not getattr(widget, "follows_clock", False):
+            return
+        tick = getattr(widget, "tick", None)
+        if callable(tick):
+            tick()
+            return
         refresh = getattr(widget, "refresh", None)
         if callable(refresh):
             refresh()

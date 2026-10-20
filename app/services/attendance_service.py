@@ -693,6 +693,70 @@ class AttendanceService:
         )
 
     # -- schedules -----------------------------------------------------------
+    def schedule_notes(
+        self, records: list[AttendanceRecord], moment: datetime | None = None
+    ) -> dict[int, str]:
+        """The Schedule column text for a batch of records, in one pass.
+
+        The attendance screens used to resolve leave, the assigned shift and
+        the schedule verdict separately for every visible row - three reads
+        on a day with the whole crew in. This reads the shift assignments,
+        the shift list and each day's leave once, then reuses them. Any
+        problem with one row degrades to ``-``, as it did before, so a broken
+        schedule can never eat the table.
+        """
+        notes: dict[int, str] = {}
+        if not records:
+            return notes
+
+        clock_now = moment or self.now()
+        try:
+            org_shift = self.organisation_shift()
+            assignments = self.repos.shifts.assignments_map()
+            own_shifts = {
+                int(row["shift_id"]): Shift.from_row(row)
+                for row in self.repos.shifts.list_all()
+            }
+        except Exception:  # pragma: no cover - the table must still draw
+            return {record.attendance_id: "-" for record in records}
+
+        leaves_by_day: dict[str, dict[int, dict]] = {}
+        for record in records:
+            try:
+                day = date.fromisoformat(record.work_date)
+                if record.work_date not in leaves_by_day:
+                    leaves_by_day[record.work_date] = self.repos.leave.for_date(
+                        record.work_date
+                    )
+                leave_row = leaves_by_day[record.work_date].get(record.employee_id)
+                if leave_row is not None:
+                    notes[record.attendance_id] = (
+                        f"On leave ({leave_label(leave_row['kind'])})"
+                    )
+                    continue
+
+                own = own_shifts.get(assignments.get(record.employee_id, -1))
+                if own is not None:
+                    shift = own if own.covers(day) else None
+                else:
+                    shift = org_shift
+                if shift is None:
+                    notes[record.attendance_id] = "Day off"
+                    continue
+
+                issues = self.schedule_issues(
+                    record.employee_id,
+                    day,
+                    record,
+                    shift=shift,
+                    moment=clock_now,
+                    on_leave=False,
+                )
+                notes[record.attendance_id] = ", ".join(issues) if issues else "-"
+            except Exception:  # pragma: no cover - the table must still draw
+                notes[record.attendance_id] = "-"
+        return notes
+
     def assigned_shift(self, employee_id: int) -> Shift | None:
         """The employee's own shift, or None when they follow the organisation shift."""
         row = self.repos.shifts.assignment_for(employee_id)
@@ -735,12 +799,15 @@ class AttendanceService:
         record: AttendanceRecord | None = None,
         shift: Shift | None = None,
         moment: datetime | None = None,
+        on_leave: bool | None = None,
     ) -> list[str]:
         """Late / Early out / No show against the day's schedule, grace aware.
 
         ``shift`` may be handed in when the caller already resolved it (the
         dashboard resolves once for the whole crew). An unclosed session is
         not an early out; the Missing Time Out pill covers that state.
+        ``on_leave`` may be handed in too, so a caller that already read the
+        day's leave does not read it again for every row.
         """
         if shift is None:
             shift = self.scheduled_shift(employee_id, day)
@@ -748,9 +815,14 @@ class AttendanceService:
             return []
         # Approved leave stands the whole schedule down for that day,
         # whatever the employee actually did (hours still record normally).
-        if self.repos.leave.on_date(
-            employee_id, day.strftime("%Y-%m-%d")
-        ) is not None:
+        if on_leave is None:
+            on_leave = (
+                self.repos.leave.on_date(
+                    employee_id, day.strftime("%Y-%m-%d")
+                )
+                is not None
+            )
+        if on_leave:
             return []
         if record is None:
             record = self.repos.attendance.get_for_date(employee_id, day.strftime("%Y-%m-%d"))

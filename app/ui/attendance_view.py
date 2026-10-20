@@ -211,11 +211,18 @@ class CorrectionDialog(QDialog):
 class AttendancePage(QWidget):
     """Today's records plus a full history browser for any employee."""
 
+    #: Missing time-outs and elapsed time move with the clock.
+    follows_clock = True
+
     def __init__(self, context, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
         self._employee_id: int | None = None
         self._range_key = "today"
+        self._today_key = None
+        self._open_key = None
+        self._audit_key = None
+        self._audit_stale = True
 
         root = QVBoxLayout(self)
         root.setContentsMargins(26, 22, 26, 22)
@@ -235,6 +242,7 @@ class AttendancePage(QWidget):
         self._tabs.addTab(self._history_page, "Employee history")
         self._tabs.addTab(self._open_page, "Missing time-outs")
         self._tabs.addTab(self._audit_page, "Audit log")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
         root.addWidget(self._tabs, 1)
 
         self.refresh()
@@ -569,32 +577,40 @@ class AttendancePage(QWidget):
             f"{totals['missing']} missing time-out"
         )
 
+        self._load_tables()
+
+    def tick(self) -> None:
+        """The one-minute refresh: leave the chosen date and range alone."""
+        self._refresh_subtitle()
+        self._load_tables()
+
+    def _refresh_subtitle(self) -> None:
+        clock = self.context.clock
+        today = clock.today()
+        totals = self.context.repositories.attendance.totals_for_date(
+            today.strftime("%Y-%m-%d")
+        )
+        self._subtitle.setText(
+            f"{clock.format_long_date(today)}  •  "
+            f"{totals['working']} working  •  {totals['closed']} timed out  •  "
+            f"{totals['missing']} missing time-out"
+        )
+
+    def _load_tables(self) -> None:
         self._load_today()
         self._load_history()
         self._load_open_sessions()
-        self._load_audit()
+        # The audit log is a tab of its own and the slowest table to fill.
+        # Refresh only reads it when that tab is on screen; switching to it
+        # loads it through _on_tab_changed.
+        if self._tabs.currentWidget() is self._audit_page:
+            self._load_audit()
+        else:
+            self._audit_stale = True
 
-    def _schedule_cell(self, record, clock) -> str:
-        """The Schedule column text for one attendance record.
-
-        Late and Early out come from the day's schedule, grace aware. A
-        scheduled day off with a manual session shows as "Day off"; any
-        problem resolving the schedule degrades to a quiet dash.
-        """
-        try:
-            day = date.fromisoformat(record.work_date)
-            leave = self.context.leave.on_date(record.employee_id, day)
-            if leave is not None:
-                return f"On leave ({leave.kind_label})"
-            shift = self.context.attendance.scheduled_shift(record.employee_id, day)
-            if shift is None:
-                return "Day off"
-            issues = self.context.attendance.schedule_issues(
-                record.employee_id, day, record, shift=shift
-            )
-        except Exception:  # pragma: no cover - the table still draws
-            return "-"
-        return ", ".join(issues) if issues else "-"
+    def _on_tab_changed(self, index: int) -> None:
+        if self._tabs.widget(index) is self._audit_page and self._audit_stale:
+            self._load_audit()
 
     def _load_today(self) -> None:
         clock = self.context.clock
@@ -607,9 +623,9 @@ class AttendancePage(QWidget):
             f"{len(records)} record(s)  •  {clock.format_duration(totals['minutes'])} recorded"
         )
 
-        clear_table_widgets(self._today_table)
-        self._today_table.setRowCount(len(records))
-        for index, record in enumerate(records):
+        notes = self.context.attendance.schedule_notes(records)
+        rows = []
+        for record in records:
             minutes = record.duration_minutes
             if record.is_open:
                 from app.utils.time_utils import TimeUtils
@@ -624,6 +640,39 @@ class AttendancePage(QWidget):
                 clock.format_time(record.time_out),
                 clock.format_duration(minutes),
             ]
+            rows.append(
+                (
+                    record,
+                    values,
+                    notes.get(record.attendance_id, "-"),
+                    self.context.attendance.source_label(record.source),
+                )
+            )
+
+        # Repainting is the expensive part: creating a few thousand table
+        # cells on every page switch and every minute made the app feel
+        # sticky. Build the cell text first and only touch the widgets when
+        # something visible actually changed.
+        key = (
+            work_date,
+            tuple(
+                (
+                    record.attendance_id,
+                    record.status,
+                    *values,
+                    schedule,
+                    source,
+                )
+                for record, values, schedule, source in rows
+            ),
+        )
+        if key == self._today_key:
+            return
+        self._today_key = key
+
+        clear_table_widgets(self._today_table)
+        self._today_table.setRowCount(len(rows))
+        for index, (record, values, schedule_text, source_text) in enumerate(rows):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
@@ -633,13 +682,12 @@ class AttendancePage(QWidget):
             badge = StatusBadge(record.status)
             self._today_table.setCellWidget(index, 5, badge_cell(badge))
 
-            schedule_text = self._schedule_cell(record, clock)
             schedule_item = QTableWidgetItem(schedule_text)
             if schedule_text != "-":
                 schedule_item.setToolTip(schedule_text)
             self._today_table.setItem(index, 6, schedule_item)
 
-            source_item = QTableWidgetItem(self.context.attendance.source_label(record.source))
+            source_item = QTableWidgetItem(source_text)
             source_item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
             self._today_table.setItem(index, 7, source_item)
 
@@ -660,6 +708,7 @@ class AttendancePage(QWidget):
             return
         start, end, label = self._range_bounds()
         records = self.context.attendance.employee_history(employee, start, end)
+        notes = self.context.attendance.schedule_notes(records)
 
         clear_table_widgets(self._history_table)
         self._history_table.setRowCount(len(records))
@@ -690,7 +739,7 @@ class AttendancePage(QWidget):
             badge = StatusBadge(record.status)
             self._history_table.setCellWidget(index, 4, badge_cell(badge))
 
-            schedule_text = self._schedule_cell(record, clock)
+            schedule_text = notes.get(record.attendance_id, "-")
             schedule_item = QTableWidgetItem(schedule_text)
             if schedule_text != "-":
                 schedule_item.setToolTip(schedule_text)
@@ -741,11 +790,10 @@ class AttendancePage(QWidget):
         clock = self.context.clock
         now = clock.now()
         records = self.context.attendance.open_sessions()
-        clear_table_widgets(self._open_table)
-        self._open_table.setRowCount(len(records))
-        for index, record in enumerate(records):
-            from app.utils.time_utils import TimeUtils
+        from app.utils.time_utils import TimeUtils
 
+        rows = []
+        for record in records:
             elapsed = TimeUtils.elapsed_minutes(TimeUtils.parse(record.time_in) or now, now)
             values = [
                 f"{record.full_name} ({record.employee_code})",
@@ -753,6 +801,18 @@ class AttendancePage(QWidget):
                 clock.format_time(record.time_in),
                 clock.format_duration(elapsed),
             ]
+            rows.append((record, values))
+
+        # Elapsed time is in the key, so a row is redrawn when its minute
+        # ticks over, not on every refresh.
+        key = tuple((record.attendance_id, *values) for record, values in rows)
+        if key == self._open_key:
+            return
+        self._open_key = key
+
+        clear_table_widgets(self._open_table)
+        self._open_table.setRowCount(len(rows))
+        for index, (record, values) in enumerate(rows):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, record.attendance_id)
@@ -767,23 +827,31 @@ class AttendancePage(QWidget):
         self._open_empty.setVisible(not records)
 
     def _load_audit(self) -> None:
-        clock = self.context.clock
         from app.models.audit import ACTION_LABELS
 
         action = self._audit_action.currentData() or ""
         logs = self.context.repositories.audit.list_recent(
             limit=500, action=action, search=self._audit_search.text().strip()
         )
-        self._audit_table.setRowCount(len(logs))
-        for index, log in enumerate(logs):
-            values = [
+        rows = [
+            (
                 log.created_at.replace("T", " "),
                 log.admin_username,
                 ACTION_LABELS.get(log.action, log.action),
                 (log.old_value or "-")[:90],
                 (log.new_value or "-")[:90],
                 (log.reason or "-"),
-            ]
+            )
+            for log in logs
+        ]
+        key = tuple(rows)
+        self._audit_stale = False
+        if key == self._audit_key:
+            return
+        self._audit_key = key
+
+        self._audit_table.setRowCount(len(rows))
+        for index, values in enumerate(rows):
             for column, value in enumerate(values):
                 self._audit_table.setItem(index, column, QTableWidgetItem(value))
 
