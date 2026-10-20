@@ -1661,6 +1661,99 @@ def test_settings_phone_start_stop_buttons(context, qt_app, admin_session):
         context.phone.stop()
 
 
+def test_settings_phone_card_offers_every_network_and_saves_the_choice(
+    context, qt_app, admin_session, monkeypatch
+):
+    import app.phone.server as phone_module
+    from app.ui.settings import SettingsPage
+
+    monkeypatch.setattr(
+        phone_module,
+        "_ipv4_candidates",
+        lambda: ["192.168.1.50", "192.168.137.1"],
+    )
+    context.settings.set("phone_enabled", True, "admin")
+    context.settings.set("phone_port", 48999, "admin")
+
+    page = SettingsPage(context)
+
+    labels = [
+        page._phone_host.itemText(index)
+        for index in range(page._phone_host.count())
+    ]
+    assert any("192.168.1.50" in text for text in labels)
+    assert any("192.168.137.1" in text for text in labels)
+    assert "192.168.1.50:48999" in page._phone_url.text()
+    assert "192.168.137.1:48999" in page._phone_url.text()
+
+    page._phone_host.setCurrentIndex(page._phone_host.findData("192.168.137.1"))
+    assert context.settings.settings.phone_link_host == "192.168.137.1"
+    assert page._phone_url.text().splitlines()[0].endswith(
+        "http://192.168.137.1:48999"
+    )
+    assert "This computer also answers on" in page._phone_url.text()
+
+
+def test_settings_phone_card_falls_back_when_the_saved_network_is_gone(
+    context, qt_app, admin_session, monkeypatch
+):
+    import app.phone.server as phone_module
+    from app.ui.settings import SettingsPage
+
+    monkeypatch.setattr(
+        phone_module, "_ipv4_candidates", lambda: ["192.168.1.50"]
+    )
+    context.settings.set("phone_link_host", "192.168.137.1", "admin")
+    context.settings.set("phone_enabled", True, "admin")
+    context.settings.set("phone_port", 48999, "admin")
+
+    page = SettingsPage(context)
+
+    stale = [
+        page._phone_host.itemText(index)
+        for index in range(page._phone_host.count())
+    ]
+    assert any("not on this computer now" in text for text in stale)
+    assert "not on this computer any more" in page._phone_link_warning.text()
+    assert "192.168.1.50:48999" in page._phone_url.text()
+
+
+def test_settings_phone_card_notices_a_network_change(
+    context, qt_app, admin_session, monkeypatch
+):
+    import app.phone.server as phone_module
+    from app.ui.settings import SettingsPage
+
+    candidates = ["192.168.1.50"]
+    monkeypatch.setattr(phone_module, "_ipv4_candidates", lambda: list(candidates))
+    context.settings.set("phone_enabled", True, "admin")
+    page = SettingsPage(context)
+
+    candidates[:] = ["10.20.30.40"]
+    page._refresh_phone_network(force=True)
+
+    assert page._phone_host.findData("10.20.30.40") >= 0
+    assert page._phone_host.findData("192.168.1.50") < 0
+    assert "10.20.30.40" in page._phone_url.text()
+
+
+def test_settings_phone_card_warns_when_the_filter_excludes_this_network(
+    context, qt_app, admin_session, monkeypatch
+):
+    import app.phone.server as phone_module
+    from app.ui.settings import SettingsPage
+
+    monkeypatch.setattr(
+        phone_module, "_ipv4_candidates", lambda: ["192.168.1.50"]
+    )
+    context.settings.set("phone_allowed_networks", "10.9.9.0/24", "admin")
+
+    page = SettingsPage(context)
+
+    assert "does not include" in page._phone_filter_warning.text()
+    assert "192.168.1.50" in page._phone_filter_warning.text()
+
+
 def test_settings_phone_start_refuses_when_disabled(
     context, qt_app, admin_session, monkeypatch
 ):

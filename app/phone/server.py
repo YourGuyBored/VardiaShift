@@ -32,6 +32,7 @@ import hmac
 import html
 import ipaddress
 import os
+import re
 import secrets
 import socket
 import threading
@@ -156,6 +157,82 @@ def lan_warning() -> str | None:
             "cannot reach it; disconnect the VPN or join the phones' network."
         )
     return None
+
+
+_HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def normalize_phone_host(value) -> str:
+    """A host usable in a phone link, or ``""`` when it is not one.
+
+    Accepts an IPv4 address or a DNS name. A scheme, a path or a port belong
+    to the URL around the host, not the host itself, and silently trimming
+    them would produce a link that looks right and goes somewhere else.
+    """
+    text = str(value or "").strip()
+    if not text or len(text) > 253:
+        return ""
+    if "://" in text or "/" in text or ":" in text or any(c.isspace() for c in text):
+        return ""
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        labels = text.rstrip(".").split(".")
+        if len(labels) < 2 or not all(_HOST_LABEL.fullmatch(label) for label in labels):
+            return ""
+        return text
+    if isinstance(address, ipaddress.IPv6Address):
+        return ""
+    # Loopback and link-local names open on this computer and nowhere else,
+    # which is exactly the failure the QR builder already refuses.
+    return text if _address_rank(text) < 3 else ""
+
+
+def configured_phone_host(settings=None) -> str:
+    """The host saved in Settings, normalised, even when it is stale."""
+    if settings is None:
+        return ""
+    try:
+        value = settings.get("phone_link_host")
+    except Exception:  # pragma: no cover - settings object without the key
+        return ""
+    return normalize_phone_host(value)
+
+
+def phone_link_host(settings=None) -> str:
+    """The saved host for phone links, while it still points here.
+
+    A saved IPv4 address that this computer no longer answers on is ignored:
+    an office laptop that moved from the wired desk to Wi-Fi would otherwise
+    keep printing QR codes for the old address. A saved name is taken at its
+    word, because only DNS can say where it points.
+    """
+    host = configured_phone_host(settings)
+    if not host:
+        return ""
+    try:
+        ipaddress.IPv4Address(host)
+    except ValueError:
+        return host
+    return host if host in lan_addresses() else ""
+
+
+def phone_host_warning(settings=None) -> str | None:
+    """Why the address saved for phone links is not being used, if so."""
+    host = configured_phone_host(settings)
+    if not host or phone_link_host(settings) == host:
+        return None
+    fallback = lan_ip()
+    if fallback:
+        return (
+            f"The address saved for phone links ({host}) is not on this "
+            f"computer any more. Links use {fallback} until it comes back, "
+            "or pick another address below."
+        )
+    return (
+        f"The address saved for phone links ({host}) is not on this computer "
+        "any more, and no local network was found."
+    )
 
 
 class _CheckinState:
@@ -346,24 +423,48 @@ class PhoneServer:
 NO_LAN_ADDRESS = "this-computer"
 
 
+def _phone_port(settings=None, port: int = 0) -> int:
+    """The port a link should name: live, explicit, or the configured one."""
+    if port:
+        return int(port)
+    if settings is not None:
+        try:
+            return int(settings.get("phone_port")) or DEFAULT_PORT
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_PORT
+
+
 def phone_base_url(settings=None, port: int = 0) -> str:
     """Shareable base URL for check-in links and QR codes.
 
     Uses the live port when the server runs, otherwise the configured port,
-    so generated QR codes stay valid once the service starts.
+    so generated QR codes stay valid once the service starts. The host is the
+    address saved for phone links when it is still live (see
+    :func:`phone_link_host`), then the best local address, so a computer with
+    an office cable and a phone hotspot can put the right one on paper.
 
     Returns a ``this-computer`` placeholder host when no LAN address can be
     found, which is fine for on-screen display but must never be encoded into
     a printed QR code - a phone cannot resolve that name. Use
     :func:`phone_url_for_phone` when building something a phone will scan.
     """
-    address = lan_ip() or NO_LAN_ADDRESS
-    if not port and settings is not None:
-        try:
-            port = int(settings.get("phone_port"))
-        except (TypeError, ValueError):
-            port = 0
-    return f"http://{address}:{port or DEFAULT_PORT}"
+    address = (
+        phone_link_host(settings) or lan_ip() or NO_LAN_ADDRESS
+    )
+    return f"http://{address}:{_phone_port(settings, port)}"
+
+
+def lan_urls(settings=None, port: int = 0) -> list[str]:
+    """Every base URL a phone could try, best first.
+
+    The service listens on all interfaces, so a computer with an office
+    cable, a Wi-Fi card and a VPN has several working addresses at once. The
+    Settings page lists them so the administrator can pick the one belonging
+    to the network the phones are actually on.
+    """
+    effective = _phone_port(settings, port)
+    return [f"http://{address}:{effective}" for address in lan_addresses()]
 
 
 def phone_url_for_phone(settings=None, port: int = 0) -> str:

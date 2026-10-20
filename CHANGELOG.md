@@ -3,6 +3,31 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+* **Phone check-in across every network this computer is on**: Settings now
+  lists each address the computer answers on, not just the best guess, and
+  lets the administrator choose which one goes into phone check-in links and
+  QR codes. That matters when the office PC has an office cable, a Wi-Fi card
+  or a hotspot at the same time: the phone service already listened on all of
+  them, but every printed QR named one address, so phones on the other
+  network were refused. *Automatic* keeps the old behaviour and prefers a
+  real local network over a VPN or tunnel. The list refreshes itself every
+  ten seconds while Settings is open, so plugging in a cable updates the
+  addresses without reopening the page. A saved address that disappears
+  falls back to the best live one with a warning, and Settings warns when
+  the allowed-networks filter no longer covers the current network. A DNS
+  name can be pinned instead of an address, so the link survives a DHCP
+  lease change when the name still resolves. Still local-only: reaching a
+  phone on mobile data would need an internet relay, which is deliberately
+  not added.
+  Files: `app/phone/server.py`, `app/phone/__init__.py`,
+  `app/models/settings.py`, `app/services/settings_service.py`,
+  `app/ui/settings.py`, `tests/test_phone.py`, `tests/test_ui.py`,
+  `README.md`, `CHANGELOG.md`.
+
 ## [1.5.0] - 2026-10-18
 
 ### Added

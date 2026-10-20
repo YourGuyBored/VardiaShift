@@ -6,7 +6,7 @@ import ipaddress
 from datetime import timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -434,6 +434,11 @@ class SettingsPage(QWidget):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         for spec in self.context.settings.settings.specs_for_group(group):
+            if spec.key == "phone_link_host":
+                # The phone card owns this one: a drop-down of the addresses
+                # this computer answers on right now beats a free-text field
+                # that can name a network the phones are not on.
+                continue
             editor = self._editor_for(spec)
             editor.setMaximumWidth(FIELD_WIDTH)
             self._editors[spec.key] = editor
@@ -464,9 +469,7 @@ class SettingsPage(QWidget):
         return page
 
     def _build_phone_status_card(self) -> QWidget:
-        """Live server controls: status, address, start/stop, firewall."""
-        from app.phone.server import lan_warning
-
+        """Live server controls: status, address choice, start/stop, firewall."""
         card = Card("Phone service", "")
         self._phone_status = QLabel("")
         self._phone_status.setWordWrap(True)
@@ -481,6 +484,33 @@ class SettingsPage(QWidget):
         self._phone_url.setProperty("role", "mono")
         card.add(self._phone_url)
 
+        # A computer can answer on several networks at once: office cable,
+        # Wi-Fi, a hotspot, a VPN. The service listens on all of them, but a
+        # printed QR can name only one, so the administrator picks which.
+        host_row = QHBoxLayout()
+        host_row.setSpacing(8)
+        host_label = QLabel("Address in phone links")
+        host_label.setProperty("role", "field")
+        host_row.addWidget(host_label)
+        self._phone_host = Select()
+        self._phone_host.setMinimumWidth(300)
+        self._phone_host.setToolTip(
+            "The address encoded into phone check-in QR codes. Pick the "
+            "network the phones join."
+        )
+        self._phone_host.currentIndexChanged.connect(self._change_phone_host)
+        host_row.addWidget(self._phone_host, 1)
+        card.add_layout(host_row)
+
+        self._phone_host_note = QLabel(
+            "Automatic uses the best address found, preferring a real local "
+            "network over a tunnel. The list refreshes by itself when this "
+            "computer changes networks."
+        )
+        self._phone_host_note.setWordWrap(True)
+        self._phone_host_note.setObjectName("CardHint")
+        card.add(self._phone_host_note)
+
         row = QHBoxLayout()
         row.setSpacing(8)
         self._phone_start_button = PrimaryButton("Start service", self._start_phone)
@@ -493,9 +523,11 @@ class SettingsPage(QWidget):
         card.add_layout(row)
 
         hint = QLabel(
-            "Employees join the same Wi-Fi as this computer, scan their "
+            "Employees join a network this computer is also on, scan their "
             "phone check-in QR, and tap once. Internet is not needed, and "
-            "the service never leaves your local network."
+            "the service never leaves your local network. If the phones use "
+            "a different network from the one shown above, pick that "
+            "address in the list."
         )
         hint.setWordWrap(True)
         hint.setObjectName("CardHint")
@@ -552,41 +584,161 @@ class SettingsPage(QWidget):
         card.add_layout(firewall_row)
         self._describe_firewall()
 
-        warning = lan_warning()
-        if warning:
-            self._phone_lan_warning = QLabel(warning)
-            self._phone_lan_warning.setWordWrap(True)
-            self._phone_lan_warning.setProperty("role", "warning")
-            card.add(self._phone_lan_warning)
-        self._refresh_phone_status()
+        def warning_label() -> QLabel:
+            label = QLabel("")
+            label.setWordWrap(True)
+            label.setProperty("role", "warning")
+            label.hide()
+            card.add(label)
+            return label
+
+        self._phone_lan_warning = warning_label()
+        self._phone_link_warning = warning_label()
+        self._phone_filter_warning = warning_label()
+
+        self._phone_network_signature = None
+        self._refresh_phone_network(force=True)
+        # Adapters change while the app runs: a cable is unplugged, Wi-Fi
+        # joins a hotspot, a VPN connects. Re-reading a handful of local
+        # addresses is cheap, and it keeps the address on screen honest.
+        self._phone_network_timer = QTimer(card)
+        self._phone_network_timer.setInterval(10_000)
+        self._phone_network_timer.timeout.connect(self._refresh_phone_network)
+        self._phone_network_timer.start()
         if self.context.phone.running:
             # The service may have auto-started with the app; if so, the card
             # should say what the firewall thinks rather than guess.
             self._refresh_firewall()
         return card
 
+    def _refresh_phone_network(self, force: bool = False) -> None:
+        """Re-read this computer's addresses and the chosen link host."""
+        if not hasattr(self, "_phone_host"):
+            return
+        if not force and not self.isVisible():
+            return
+        from app.phone.server import configured_phone_host, lan_addresses
+
+        settings = self.context.settings.settings
+        addresses = lan_addresses()
+        configured = configured_phone_host(settings)
+        signature = (tuple(addresses), configured, settings.phone_port)
+        if force or signature != self._phone_network_signature:
+            self._phone_network_signature = signature
+            self._fill_phone_host_choices(addresses, configured)
+            self._refresh_phone_status()
+        self._update_phone_warnings()
+
+    def _fill_phone_host_choices(
+        self, addresses: list[str], configured: str
+    ) -> None:
+        """List automatic plus every live address, keeping the saved choice."""
+        combo = self._phone_host
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem("Automatic (best available)", "")
+            for address in addresses:
+                combo.addItem(f"{address}  (this computer)", address)
+            if configured and configured not in addresses:
+                combo.addItem(
+                    f"{configured}  (not on this computer now)", configured
+                )
+            index = combo.findData(configured)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+        finally:
+            combo.blockSignals(False)
+
+    def _change_phone_host(self, index: int = -1) -> None:
+        """Persist the address used for phone links as soon as it is picked."""
+        from app.phone.server import configured_phone_host
+
+        value = self._phone_host.currentData() or ""
+        if value == configured_phone_host(self.context.settings.settings):
+            return
+        try:
+            self.context.settings.set(
+                "phone_link_host", value, self.context.current_username
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Check the address", str(exc))
+        self._refresh_phone_network(force=True)
+
+    def _update_phone_warnings(self) -> None:
+        """Say out loud when the network, the filter or the saved host moved."""
+        from app.phone.server import lan_ip, lan_warning, phone_host_warning
+        from app.utils.validation import parse_network_list
+
+        def show(label: QLabel, message: str) -> None:
+            label.setText(message)
+            label.setVisible(bool(message))
+
+        show(self._phone_lan_warning, lan_warning() or "")
+        show(
+            self._phone_link_warning,
+            phone_host_warning(self.context.settings.settings) or "",
+        )
+
+        message = ""
+        settings = self.context.settings.settings
+        current = lan_ip()
+        if settings.phone_allowed_networks and current:
+            allowed = parse_network_list(settings.phone_allowed_networks)
+            try:
+                inside = any(
+                    ipaddress.ip_address(current) in network for network in allowed
+                )
+            except ValueError:
+                inside = True
+            if not inside:
+                message = (
+                    f"The allowed networks list does not include this "
+                    f"computer's current address ({current}), so phones on "
+                    "this network will be refused. Add the network, or clear "
+                    "the filter to allow any local device."
+                )
+        show(self._phone_filter_warning, message)
+
     def _refresh_phone_status(self) -> None:
         if not hasattr(self, "_phone_status"):
             return
+        from app.phone.server import lan_urls, phone_base_url
+
         server = self.context.phone
         settings = self.context.settings.settings
+        port = server.port if server.running else settings.phone_port
+        base = ""
         if server.running:
             self._phone_status.setText(
                 f"Running on port {server.port}. This computer must stay on "
                 "while employees check in."
             )
-            self._phone_url.setText(f"Check-in base address:\n{server.display_url()}")
+            base = server.display_url()
         elif not settings.phone_enabled:
             self._phone_status.setText(
                 "Phone attendance is disabled. Tick 'Enable phone attendance' "
                 "above, save, then start the service."
             )
-            self._phone_url.setText("")
         else:
             self._phone_status.setText(
                 f"Stopped. It will listen on port {settings.phone_port} once started."
             )
+            base = phone_base_url(settings, 0)
+
+        if not base:
             self._phone_url.setText("")
+        else:
+            lines = [f"Phone links use: {base}"]
+            others = [url for url in lan_urls(settings, port) if url != base]
+            if others:
+                lines.append("This computer also answers on:")
+                lines.extend(f"  {url}" for url in others)
+                lines.append(
+                    "Phones can use any of these addresses when they are on "
+                    "the matching network."
+                )
+            self._phone_url.setText("\n".join(lines))
+
         self._phone_start_button.setEnabled(not server.running)
         self._phone_stop_button.setEnabled(server.running)
 

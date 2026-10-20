@@ -583,6 +583,103 @@ def test_phone_url_refuses_a_tunnel_only_address(monkeypatch):
     assert "VPN" in str(excinfo.value)
 
 
+# -- more than one network ---------------------------------------------------
+def test_lan_urls_lists_every_address_with_the_same_port(monkeypatch):
+    """Office cable and phone hotspot: both addresses must be offered."""
+    import app.phone.server as phone_module
+
+    _candidates(monkeypatch, "100.117.213.112", "192.168.137.1", "192.168.1.50")
+    urls = phone_module.lan_urls(None, port=8123)
+    assert urls == [
+        "http://192.168.137.1:8123",
+        "http://192.168.1.50:8123",
+        "http://100.117.213.112:8123",
+    ]
+
+
+def test_lan_urls_uses_the_saved_port_when_one_is_not_given(monkeypatch):
+    import app.phone.server as phone_module
+    from app.models.settings import AppSettings
+
+    _candidates(monkeypatch, "192.168.1.50")
+    settings = AppSettings(values={"phone_port": 9000})
+    assert phone_module.lan_urls(settings) == ["http://192.168.1.50:9000"]
+
+
+def test_saved_link_host_is_used_for_phone_qr_codes(monkeypatch):
+    """The admin can choose the network the phones join, not the best guess."""
+    import app.phone.server as phone_module
+    from app.models.settings import AppSettings
+
+    _candidates(monkeypatch, "192.168.1.50", "192.168.137.1")
+    settings = AppSettings(
+        values={"phone_link_host": "192.168.137.1", "phone_port": 8123}
+    )
+    assert phone_module.phone_base_url(settings) == "http://192.168.137.1:8123"
+    assert (
+        phone_module.phone_url_for_phone(settings)
+        == "http://192.168.137.1:8123"
+    )
+
+
+def test_saved_link_host_falls_back_when_this_computer_leaves_that_network(
+    monkeypatch,
+):
+    """An unplugged cable must not keep printing QR codes for a dead address."""
+    import app.phone.server as phone_module
+    from app.models.settings import AppSettings
+
+    _candidates(monkeypatch, "192.168.1.50")
+    settings = AppSettings(
+        values={"phone_link_host": "192.168.137.1", "phone_port": 8123}
+    )
+    assert phone_module.phone_link_host(settings) == ""
+    assert phone_module.phone_base_url(settings) == "http://192.168.1.50:8123"
+    warning = phone_module.phone_host_warning(settings)
+    assert warning is not None
+    assert "192.168.137.1" in warning
+
+
+def test_saved_link_host_can_be_a_name(monkeypatch):
+    """A name the office DNS resolves survives an address change."""
+    import app.phone.server as phone_module
+    from app.models.settings import AppSettings
+
+    _candidates(monkeypatch, "192.168.1.50")
+    settings = AppSettings(
+        values={"phone_link_host": "vardiashift.local", "phone_port": 8123}
+    )
+    assert phone_module.phone_base_url(settings) == "http://vardiashift.local:8123"
+    assert phone_module.phone_host_warning(settings) is None
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("192.168.1.50", "192.168.1.50"),
+        (" vardiashift.local ", "vardiashift.local"),
+        ("my-office-pc.lan", "my-office-pc.lan"),
+        ("http://192.168.1.50", ""),
+        ("192.168.1.50:8123", ""),
+        ("192.168.1.50/c", ""),
+        ("127.0.0.1", ""),
+        ("169.254.10.10", ""),
+        ("just-a-word", ""),
+        ("", ""),
+    ],
+)
+def test_normalize_phone_host_accepts_an_address_or_name_only(value, expected):
+    from app.phone.server import normalize_phone_host
+
+    assert normalize_phone_host(value) == expected
+
+
+def test_settings_refuses_a_url_in_the_address_field(context, admin):
+    with pytest.raises(ValueError) as excinfo:
+        context.settings.set("phone_link_host", "http://192.168.1.50", "admin")
+    assert "without http://" in str(excinfo.value)
+
+
 def test_lan_warning_is_quiet_on_a_normal_network(monkeypatch):
     import app.phone.server as phone_module
 

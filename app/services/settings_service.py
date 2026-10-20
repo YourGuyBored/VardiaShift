@@ -98,6 +98,15 @@ class SettingsService:
                         "192.168.1.0/24, comma-separated, not '"
                         f"{bad[0]}'."
                     )
+        if key == "phone_link_host":
+            from app.phone.server import normalize_phone_host
+
+            text = str(coerced).strip()
+            if text and not normalize_phone_host(text):
+                return (
+                    f"{spec.label} must be an address such as 192.168.1.50 or "
+                    "a name like vardiashift.local, without http:// or a port."
+                )
         if spec.type == "choice" and spec.choices and coerced not in spec.choices:
             # Long choice lists (time zones) would produce an unusable message.
             if len(spec.choices) <= 12:

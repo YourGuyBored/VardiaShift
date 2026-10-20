@@ -358,15 +358,19 @@ install, no accounts, no typing:
 
 1. In VardiaShift, open **Settings → Phone**, tick
    *Enable phone attendance*, and save. Press **Start service**; the panel
-   shows the exact base address for phones. If it also says the computer's
-   firewall is blocking the port, press **Allow phones through the firewall**
-   and approve the prompt your operating system shows.
-2. On the **QR Codes** page, select an employee and press
+   shows every address this computer answers on. If it also says the
+   computer's firewall is blocking the port, press **Allow phones through the
+   firewall** and approve the prompt your operating system shows.
+2. If the phones use a different network from the one listed first (an office
+   cable and a Wi-Fi hotspot, for example), choose that address under
+   *Address in phone links*. The choice is saved and goes into the next QR
+   you print.
+3. On the **QR Codes** page, select an employee and press
    **Phone clock-in / out QR**. Print it or show it on screen.
-3. The employee joins the **same Wi-Fi** as the VardiaShift computer and points
-   their phone camera at the code. The QR holds a full web address, so the
-   page opens by itself in the browser - no typing, no tapping a link.
-4. Their personal page shows whether they are currently clocked in and offers
+4. The employee joins a network this computer is also on and points their
+   phone camera at the code. The QR holds a full web address, so the page
+   opens by itself in the browser - no typing, no tapping a link.
+5. Their personal page shows whether they are currently clocked in and offers
    two buttons: **Time in** (blue) and **Time out** (red). They tap the one
    they mean. The result is shown immediately, including hours worked after
    time-out.
@@ -381,12 +385,27 @@ The service only runs while enabled and only listens on this computer's own
 networks (no UPnP, no port forwarding, no cloud). Turning the feature off in
 Settings stops a running service immediately.
 
+A phone on mobile data cannot reach this computer. That would need a relay
+service on the internet, which would stop check-in working offline and send
+attendance traffic off your network, so VardiaShift does not add one. When the
+phone and the computer are on different networks, put them on one network
+that reaches both, or use the desktop kiosk.
+
 Details worth knowing:
 
-* The QR encodes this computer's LAN address, so it only works while the
-  VardiaShift computer is on the same network. If the address changes (a
-  different Wi-Fi, or a DHCP renewal) the printed code stops working and
-  needs reprinting - the status panel in Settings shows the current address.
+* The QR encodes one address, so it only works while the VardiaShift computer
+  is reachable at that address. If the address changes (a different Wi-Fi, or
+  a DHCP renewal) the printed code stops working and needs reprinting - the
+  status panel in Settings shows the current address. Settings lists every
+  address the computer answers on and refreshes the list when a cable or
+  Wi-Fi changes; *Automatic* prefers a real local network over a VPN or
+  tunnel, and *Address in phone links* pins the one the phones use.
+* If a saved address disappears from this computer, phone links fall back to
+  the best live one with a warning, rather than printing a QR for a network
+  that is no longer there.
+* A name such as `vardiashift.local` can be used under *Address in phone
+  links* when your network resolves it. The link then survives an address
+  change, as long as the name still points at this computer.
 * Printing a phone QR needs a network address. If the computer is not on a
   network yet, VardiaShift says so instead of printing a code that would scan
   fine and then open nothing.
@@ -422,13 +441,16 @@ Details worth knowing:
 * If the service won't start, the port is probably busy - change
   *Phone service port* (default `8123`) and press **Start service** again. The
   status panel shows the exact address phones should open.
-* **The page opens on this computer but not on a phone.** Two causes. If a
-  VPN or Tailscale is connected it can own the default route, and the code
-  would encode the tunnel's address - reachable from the PC and no phone.
-  VardiaShift spots that and refuses to print the code, and Settings names the
-  address; disconnect the VPN or join the office network. Otherwise the
-  computer's firewall is blocking incoming connections: press **Allow phones
-  through the firewall** in Settings and approve the prompt.
+* **The page opens on this computer but not on a phone.** First check
+  *Address in phone links*: this computer may have more than one address, and
+  the phones may be on the other network. If a VPN or Tailscale is connected
+  it can own the default route, and the code would encode the tunnel's
+  address - reachable from the PC and no phone. VardiaShift spots that and
+  refuses to print the code, and Settings names the address; disconnect the
+  VPN or join the office network. Otherwise the computer's firewall is
+  blocking incoming connections: press **Allow phones through the firewall**
+  in Settings and approve the prompt. If *Allowed networks* no longer covers
+  the address this computer is on, Settings says so there too.
 
 ## Administrator workflow
 

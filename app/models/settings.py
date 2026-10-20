@@ -283,6 +283,15 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "computer, which is normally only your local network.",
         max_length=300,
     ),
+    SettingSpec(
+        "phone_link_host", "Address in phone links", TYPE_TEXT, "", GROUP_PHONE,
+        "Which of this computer's addresses goes into phone check-in links and "
+        "QR codes. Leave empty to use the best one automatically. Pick one "
+        "when this computer is on more than one network and the phones use "
+        "the other one. A name such as vardiashift.local also works when your "
+        "network can resolve it.",
+        max_length=253,
+    ),
     # -- Google Sheets export (optional integration) -------------------------
     SettingSpec(
         "sheets_enabled", "Enable Google Sheets export", TYPE_BOOL, False, GROUP_SHEETS,
@@ -494,6 +503,10 @@ class AppSettings:
     @property
     def phone_allowed_networks(self) -> str:
         return str(self.get("phone_allowed_networks") or "")
+
+    @property
+    def phone_link_host(self) -> str:
+        return str(self.get("phone_link_host") or "").strip()
 
     @property
     def sheets_enabled(self) -> bool:
