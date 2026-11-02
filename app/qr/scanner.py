@@ -18,6 +18,7 @@ lets the attendance service decide what it means.
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass
 
@@ -59,6 +60,15 @@ PROBE_TIMEOUT_MS = 3000
 #: Gap between frame attempts while waiting for a device to warm up.
 FRAME_POLL_S = 0.05
 
+#: Appended to a failed camera start. The camera can be perfectly healthy and
+#: still be invisible to one process, so the message points at the two causes
+#: an administrator can actually check.
+CAMERA_HINT = (
+    " If the webcam works in another app, close that app first. On Windows, "
+    "allow desktop apps to use the camera in Settings > Privacy & security > "
+    "Camera."
+)
+
 
 @dataclass
 class ScanCapability:
@@ -96,20 +106,57 @@ def _release(capture) -> None:
         pass
 
 
-def _make_capture(index: int):
-    """Construct a capture handle for one index.
+def _video_backends(platform: str | None = None) -> tuple[int | None, ...]:
+    """Camera backends to try, in the order most likely to see a webcam.
 
-    Deliberately one argument only. OpenCV exposes
-    ``CAP_PROP_OPEN_TIMEOUT_MSEC`` and it looks like the obvious way to bound a
-    slow device, but passing it to ``VideoCapture()`` makes the V4L2/FFMPEG
-    path reject the open outright - measured on 5.0.0, a perfectly present
-    camera reports "not opened" and the app answers "No camera found". The
-    frame wait in ``_wait_for_frame`` is what bounds a slow device instead.
+    OpenCV picks Media Foundation by default on Windows. That works for many
+    cameras, but a fair number of USB webcams open there and never deliver a
+    frame, while the older DirectShow path sees them immediately. Trying both
+    is what turns "No camera detected" into a working preview without asking
+    the administrator to change a system setting.
+
+    On Linux and macOS the platform native backend is the only useful one, so
+    the list has a single entry. A build with no constants at all falls back
+    to OpenCV's own choice, exactly as the app behaved before.
+    """
+    if not OPENCV_AVAILABLE:
+        return ()
+    platform = sys.platform if platform is None else platform
+    names: tuple[str, ...]
+    if platform.startswith("win"):
+        names = ("CAP_DSHOW", "CAP_MSMF")
+    elif platform == "darwin":
+        names = ("CAP_AVFOUNDATION",)
+    elif platform.startswith("linux"):
+        names = ("CAP_V4L2",)
+    else:
+        names = ()
+
+    backends: list[int | None] = []
+    for name in names:
+        value = getattr(cv2, name, None)
+        if value is not None and value not in backends:
+            backends.append(value)
+    # A backend-less build still gets one honest attempt through CAP_ANY.
+    return tuple(backends) if backends else (None,)
+
+
+def _make_capture(index: int, backend: int | None = None):
+    """Construct a capture handle for one index, using a named backend.
+
+    Deliberately does not pass ``CAP_PROP_OPEN_TIMEOUT_MSEC``. It looks like
+    the obvious way to bound a slow device, but handing it to
+    ``VideoCapture()`` makes the V4L2/FFMPEG path reject the open outright -
+    measured on 5.0.0, a perfectly present camera reports "not opened" and the
+    app answers "No camera found". The frame wait in ``_wait_for_frame`` is
+    what bounds a slow device instead.
     """
     if not OPENCV_AVAILABLE:
         return None
     try:
-        return cv2.VideoCapture(index)
+        if backend is None:
+            return cv2.VideoCapture(index)
+        return cv2.VideoCapture(index, backend)
     except Exception:  # pragma: no cover - depends on the OpenCV build
         return None
 
@@ -138,7 +185,11 @@ def _wait_for_frame(capture, timeout_ms: int) -> bool:
         time.sleep(FRAME_POLL_S)
 
 
-def _open_capture(index: int, timeout_ms: int = PROBE_TIMEOUT_MS):
+def _open_capture(
+    index: int,
+    timeout_ms: int = PROBE_TIMEOUT_MS,
+    backends: tuple[int | None, ...] | None = None,
+):
     """Open one capture handle, and hand it back only once it has sent a frame.
 
     OpenCV reports success for an index with nothing behind it on some
@@ -147,17 +198,25 @@ def _open_capture(index: int, timeout_ms: int = PROBE_TIMEOUT_MS):
     with "the camera stopped sending frames". A frame read is the only honest
     test, so this waits for one up to ``timeout_ms`` and gives the handle back
     if none arrives.
+
+    ``backends`` is normally left alone so every backend for this platform is
+    tried. The discovery loop passes one backend at a time so it can sweep
+    every index with the most compatible backend before paying for a second
+    pass.
     """
-    capture = _make_capture(index)
-    if capture is None:
-        return None
-    try:
-        opened = bool(capture.isOpened())
-    except Exception:  # pragma: no cover - depends on the OpenCV build
-        opened = False
-    if opened and _wait_for_frame(capture, timeout_ms):
-        return capture
-    _release(capture)
+    if backends is None:
+        backends = _video_backends()
+    for backend in backends:
+        capture = _make_capture(index, backend)
+        if capture is None:
+            continue
+        try:
+            opened = bool(capture.isOpened())
+        except Exception:  # pragma: no cover - depends on the OpenCV build
+            opened = False
+        if opened and _wait_for_frame(capture, timeout_ms):
+            return capture
+        _release(capture)
     return None
 
 
@@ -173,19 +232,32 @@ def list_cameras(
     so this takes a second or more per connected camera - callers on the GUI
     thread should run it in the background.
 
+    The sweep is backend-major: every index is tried with DirectShow (on
+    Windows) before falling back to Media Foundation. A camera that the first
+    backend sees is therefore found without opening it twice, and a machine
+    with several cameras does not pay the fallback cost per index.
+
     ``should_stop`` is polled between devices, so a window that is closing can
     cut a long probe short instead of waiting it out.
     """
-    found: list[int] = []
-    for index in range(max(0, int(max_index))):
-        if should_stop is not None and should_stop():
+    limit = max(0, int(max_index))
+    found: set[int] = set()
+    for backend in _video_backends():
+        for index in range(limit):
+            if should_stop is not None and should_stop():
+                return sorted(found)
+            if index in found:
+                continue
+            capture = _open_capture(index, timeout_ms, (backend,))
+            if capture is None:
+                continue
+            _release(capture)
+            found.add(index)
+        # The more compatible backend already answered; a second sweep would
+        # only rediscover the same cameras more slowly.
+        if found:
             break
-        capture = _open_capture(index, timeout_ms)
-        if capture is None:
-            continue
-        _release(capture)
-        found.append(index)
-    return found
+    return sorted(found)
 
 
 class CameraScanner(QObject):
@@ -234,41 +306,40 @@ class CameraScanner(QObject):
             return False, "Webcam scanning needs the optional 'opencv-python' package."
 
         if camera_index is None:
-            candidates = range(max(0, int(max_index)))
+            candidates = list(range(max(0, int(max_index))))
         else:
             candidates = [int(camera_index)]
 
-        tried = 0
-        for index in candidates:
-            tried += 1
-            capture = _open_capture(index)
-            if capture is None:
-                continue
-            try:
-                self._capture = capture
-                self._detector = cv2.QRCodeDetector()
-                self._camera_index = index
-                self._failures = 0
-                self._error_reported = False
-                self._timer.start()
-                return True, f"Camera {index} started."
-            except Exception as exc:  # pragma: no cover - hardware dependent
+        # Backend-major: a Windows camera that DirectShow can see is found on
+        # the first pass, without opening every index twice. If that pass sees
+        # nothing, Media Foundation gets its own full sweep.
+        for backend in _video_backends():
+            for index in candidates:
+                capture = _open_capture(index, backends=(backend,))
+                if capture is None:
+                    continue
                 try:
-                    capture.release()
-                except Exception:
-                    pass
-                self._capture = None
-                return False, f"Could not start the camera: {exc}"
+                    self._capture = capture
+                    self._detector = cv2.QRCodeDetector()
+                    self._camera_index = index
+                    self._failures = 0
+                    self._error_reported = False
+                    self._timer.start()
+                    return True, f"Camera {index} started."
+                except Exception as exc:  # pragma: no cover - hardware dependent
+                    _release(capture)
+                    self._capture = None
+                    return False, f"Could not start the camera: {exc}"
 
         if camera_index is None:
             return False, (
                 "No camera found. Tried video devices "
                 f"0 to {max(0, int(max_index)) - 1}. Connect a webcam, or pick "
-                "one from the camera list."
+                f"one from the camera list.{CAMERA_HINT}"
             )
         return False, (
             f"Camera {camera_index} could not be opened. Pick another from the "
-            "camera list, or reconnect the device."
+            f"camera list, or reconnect the device.{CAMERA_HINT}"
         )
 
     def stop(self) -> None:

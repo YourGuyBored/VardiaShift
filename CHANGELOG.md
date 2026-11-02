@@ -7,6 +7,19 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Added
 
+* **A USB webcam the app could not see**: camera discovery now asks the
+  operating system for a specific video backend instead of letting OpenCV
+  choose one. On Windows it tries DirectShow first and Media Foundation
+  second, which is the difference for a fair number of USB webcams: Media
+  Foundation opens the device, never delivers a frame, and the kiosk reported
+  "No camera detected" while the camera worked in every other app. The sweep
+  is backend-major, so a camera the first backend sees is found without
+  opening it twice, and it only falls back when the first pass is empty.
+  Named cameras get the same fallback. Failure messages now point at the two
+  causes an administrator can check: another app holding the camera, and the
+  Windows desktop-app camera permission. Files: `app/qr/scanner.py`,
+  `tests/test_camera.py`, `README.md`, `CHANGELOG.md`.
+
 * **Phone check-in across every network this computer is on**: Settings now
   lists each address the computer answers on, not just the best guess, and
   lets the administrator choose which one goes into phone check-in links and

@@ -45,6 +45,9 @@ class FakeCapture:
 
     LIVE: set[int] = set()
     GHOST: set[int] = set()
+    #: Backends that cannot open any index in this scenario. Lets a test prove
+    #: that DirectShow giving up still falls through to Media Foundation.
+    FAIL_BACKENDS: set[int] = set()
     #: The argv of every construction, so a test can prove what was - and was
     #: not - handed to cv2.VideoCapture.
     attempts: list[tuple] = []
@@ -52,10 +55,13 @@ class FakeCapture:
 
     def __init__(self, *arguments):
         self.index = arguments[0] if arguments else None
+        self.backend = arguments[1] if len(arguments) > 1 else None
         FakeCapture.attempts.append(arguments)
         self.set_calls: list[tuple] = []
 
     def isOpened(self):
+        if self.backend in FakeCapture.FAIL_BACKENDS:
+            return False
         return self.index in FakeCapture.LIVE or self.index in FakeCapture.GHOST
 
     def set(self, prop, value):
@@ -75,6 +81,7 @@ class FakeCapture:
 def fake_cv2(monkeypatch):
     FakeCapture.LIVE = set()
     FakeCapture.GHOST = set()
+    FakeCapture.FAIL_BACKENDS = set()
     FakeCapture.attempts = []
     FakeCapture.released = []
     fake = types.SimpleNamespace(
@@ -202,14 +209,16 @@ def test_a_probe_can_be_cut_short_between_devices(fake_cv2):
 
 
 # -- deadlines and messages --------------------------------------------------
-def test_probe_passes_nothing_but_the_index_to_opencv(fake_cv2):
-    """OpenCV must be asked for a plain ``VideoCapture(index)``.
+def test_probe_asks_for_a_backend_but_not_its_timeout(fake_cv2):
+    """OpenCV must get a backend, and never the open-timeout property.
 
-    Its own ``CAP_PROP_OPEN_TIMEOUT_MSEC`` looks like the right way to bound a
-    slow device, but handing it to ``VideoCapture()`` makes the V4L2/FFMPEG
-    path refuse the open: measured on OpenCV 5.0.0, a camera that is present
-    answers "not opened" and the app reports "No camera found" for a camera
-    sitting right there. The frame wait is what bounds a slow device.
+    The backend argument is what makes a Windows USB webcam reachable when
+    the default backend cannot see it. ``CAP_PROP_OPEN_TIMEOUT_MSEC`` looks
+    like the right way to bound a slow device, but handing it to
+    ``VideoCapture()`` makes the V4L2/FFMPEG path refuse the open: measured on
+    OpenCV 5.0.0, a camera that is present answers "not opened" and the app
+    reports "No camera found" for a camera sitting right there. The frame wait
+    is what bounds a slow device.
     """
     from app.qr.scanner import list_cameras
 
@@ -217,7 +226,56 @@ def test_probe_passes_nothing_but_the_index_to_opencv(fake_cv2):
     assert fake_cv2.CAP_PROP_OPEN_TIMEOUT_MSEC == 53
     FakeCapture.LIVE = {0}
     assert list_cameras(max_index=1) == [0]
-    assert FakeCapture.attempts == [(0,)], "constructed with the index alone"
+    assert FakeCapture.attempts == [(0, fake_cv2.CAP_V4L2)]
+    for attempt in FakeCapture.attempts:
+        assert fake_cv2.CAP_PROP_OPEN_TIMEOUT_MSEC not in attempt
+
+
+def test_windows_tries_directshow_before_the_default(fake_cv2, monkeypatch):
+    """DirectShow sees USB webcams that Media Foundation often does not."""
+    from app.qr.scanner import list_cameras
+
+    monkeypatch.setattr(scanner_module.sys, "platform", "win32")
+    FakeCapture.LIVE = {1}
+
+    assert list_cameras(max_index=2) == [1]
+    assert FakeCapture.attempts == [
+        (0, fake_cv2.CAP_DSHOW),
+        (1, fake_cv2.CAP_DSHOW),
+    ]
+
+
+def test_windows_falls_back_to_media_foundation(fake_cv2, monkeypatch):
+    """A camera only MSMF can open must still be found, not written off."""
+    from app.qr.scanner import list_cameras
+
+    monkeypatch.setattr(scanner_module.sys, "platform", "win32")
+    FakeCapture.FAIL_BACKENDS = {fake_cv2.CAP_DSHOW}
+    FakeCapture.LIVE = {1}
+
+    assert list_cameras(max_index=2) == [1]
+    backends = [arguments[1] for arguments in FakeCapture.attempts]
+    assert backends.count(fake_cv2.CAP_DSHOW) == 2
+    assert backends.count(fake_cv2.CAP_MSMF) == 2
+
+
+def test_windows_start_falls_back_for_a_named_camera(fake_cv2, monkeypatch):
+    from app.qr.scanner import CameraScanner
+
+    monkeypatch.setattr(scanner_module.sys, "platform", "win32")
+    FakeCapture.FAIL_BACKENDS = {fake_cv2.CAP_DSHOW}
+    FakeCapture.LIVE = {2}
+    scanner = CameraScanner()
+    try:
+        ok, _message = scanner.start(camera_index=2)
+        assert ok is True
+        assert scanner.camera_index == 2
+        assert [arguments[1] for arguments in FakeCapture.attempts] == [
+            fake_cv2.CAP_DSHOW,
+            fake_cv2.CAP_MSMF,
+        ]
+    finally:
+        scanner.stop()
 
 
 def test_start_reports_which_indices_were_tried(fake_cv2):

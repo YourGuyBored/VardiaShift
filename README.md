@@ -342,7 +342,11 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
   ships in the downloads, so there is nothing to install: press **Start
   camera**, or choose a specific device from the list when more than one is
   plugged in. The kiosk looks for cameras in the background, so it opens
-  immediately whether or not one is connected.
+  immediately whether or not one is connected. On Windows it asks DirectShow
+  first and Media Foundation second, because some USB webcams are invisible to
+  one of those and fine in the other. If the camera works in another app but
+  not here, close that app and check that Windows *Settings → Privacy &
+  security → Camera* allows desktop apps to use the camera.
 * **USB QR reader** - any keyboard-style scanner just works: scan, press
   Enter, done. No drivers or configuration.
 * **Manual entry** - an employee ID can be typed when a scanner is unavailable
