@@ -1504,7 +1504,7 @@ def test_camera_reports_failure_after_repeated_bad_frames(qt_app):
     errors: list = []
     scanner.camera_error.connect(errors.append)
     scanner._capture = DeadCapture()
-    scanner._timer.start()
+    scanner._stop_event.clear()
     try:
         for _ in range(CameraScanner.FAILURE_THRESHOLD + 2):
             scanner._grab()
@@ -1530,6 +1530,7 @@ def test_camera_error_rearms_on_restart(qt_app):
     errors: list = []
     scanner.camera_error.connect(errors.append)
     scanner._capture = DeadCapture()
+    scanner._stop_event.clear()
     for _ in range(CameraScanner.FAILURE_THRESHOLD):
         scanner._grab()
     assert len(errors) == 1
@@ -1538,6 +1539,7 @@ def test_camera_error_rearms_on_restart(qt_app):
     scanner._error_reported = False
     scanner._failures = 0
     scanner._capture = DeadCapture()
+    scanner._stop_event.clear()
     for _ in range(CameraScanner.FAILURE_THRESHOLD):
         scanner._grab()
     assert len(errors) == 2

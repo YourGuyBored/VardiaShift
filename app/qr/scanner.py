@@ -19,10 +19,11 @@ lets the attendance service decide what it means.
 from __future__ import annotations
 
 import sys
+import threading
 import time
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -59,6 +60,11 @@ PROBE_TIMEOUT_MS = 3000
 
 #: Gap between frame attempts while waiting for a device to warm up.
 FRAME_POLL_S = 0.05
+
+#: How long ``stop()`` waits for a read that may be stuck in the driver. The
+#: reader is a daemon thread, so a wedged call cannot keep the process alive;
+#: the window still gets control back quickly.
+STOP_TIMEOUT_S = 1.0
 
 #: Appended to a failed camera start. The camera can be perfectly healthy and
 #: still be invisible to one process, so the message points at the two causes
@@ -272,9 +278,9 @@ class CameraScanner(QObject):
         self._capture = None
         self._detector = None
         self._camera_index: int | None = None
-        self._timer = QTimer(self)
-        self._timer.setInterval(INTERVAL_MS)
-        self._timer.timeout.connect(self._grab)
+        self._reader: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._stop_event.set()
         self._failures = 0
         self._error_reported = False
 
@@ -301,6 +307,12 @@ class CameraScanner(QObject):
         """
         if not OPENCV_AVAILABLE:
             return False, "Webcam scanning needs the optional 'opencv-python' package."
+        if self.running:
+            return False, "The camera is already running."
+
+        # A previous attempt may have timed out while releasing a wedged
+        # device. Clear that state before opening anything new.
+        self.stop()
 
         if camera_index is None:
             candidates = list(range(max(0, int(max_index))))
@@ -321,7 +333,13 @@ class CameraScanner(QObject):
                     self._camera_index = index
                     self._failures = 0
                     self._error_reported = False
-                    self._timer.start()
+                    self._stop_event.clear()
+                    self._reader = threading.Thread(
+                        target=self._read_loop,
+                        name="VardiaShiftCamera",
+                        daemon=True,
+                    )
+                    self._reader.start()
                     return True, f"Camera {index} started."
                 except Exception as exc:  # pragma: no cover - hardware dependent
                     _release(capture)
@@ -340,37 +358,67 @@ class CameraScanner(QObject):
         )
 
     def stop(self) -> None:
-        self._timer.stop()
-        if self._capture is not None:
-            try:
-                self._capture.release()
-            except Exception:  # pragma: no cover
-                pass
-        self._capture = None
+        """Stop reading and release the device without freezing the window."""
+        self._stop_event.set()
+        reader, self._reader = self._reader, None
+        if reader is not None and reader is not threading.current_thread():
+            # A driver read can block when the camera is unplugged. Waiting
+            # forever here would freeze the kiosk, so the wait is short and
+            # the reader is a daemon thread that cannot outlive the process.
+            reader.join(STOP_TIMEOUT_S)
+        capture, self._capture = self._capture, None
         self._camera_index = None
+        self._detector = None
         self._failures = 0
+        if capture is not None:
+            _release(capture)
 
     @property
     def running(self) -> bool:
-        return self._timer.isActive()
+        if self._capture is None or self._stop_event.is_set():
+            return False
+        reader = self._reader
+        return reader is None or reader.is_alive()
+
+    def _read_loop(self) -> None:
+        """Read and decode on a worker thread, never on the UI thread.
+
+        ``capture.read()`` blocks until the driver answers, and QR decoding
+        costs a measurable slice of the CPU. Doing either on the GUI thread
+        made the kiosk stutter while the camera ran and froze it outright
+        when a camera was unplugged mid-frame.
+        """
+        while not self._stop_event.is_set():
+            self._grab()
+            if self._stop_event.is_set():
+                break
+            self._stop_event.wait(max(0.0, INTERVAL_MS / 1000.0))
 
     def _grab(self) -> None:
-        if self._capture is None:
+        capture = self._capture
+        if capture is None:
             return
         try:
-            ok, frame = self._capture.read()
+            ok, frame = capture.read()
         except Exception:
             ok, frame = False, None
+        # A stop can land while the driver is answering. Do not emit a frame
+        # or start a new failure count after the caller has moved on.
+        if self._stop_event.is_set():
+            return
         if not ok or frame is None:
             self._note_failure("The camera stopped sending frames.")
             return
 
+        detector = self._detector
+        if detector is None:
+            return
         try:
             height, width, channels = frame.shape
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
             self.frame_ready.emit(image.copy())
-            payload, points, _ = self._detector.detectAndDecode(frame)
+            payload, points, _ = detector.detectAndDecode(frame)
         except Exception as exc:
             self._note_failure(f"The camera feed could not be read ({exc}).")
             return
@@ -382,7 +430,13 @@ class CameraScanner(QObject):
         self._failures += 1
         if self._failures >= self.FAILURE_THRESHOLD and not self._error_reported:
             self._error_reported = True
-            self.stop()
+            # Stop the reader without joining it: this can run on the reader
+            # thread itself, and joining there would deadlock.
+            self._stop_event.set()
+            capture, self._capture = self._capture, None
+            self._camera_index = None
+            if capture is not None:
+                _release(capture)
             self.camera_error.emit(f"{message} The camera was stopped.")
 
 

@@ -43,6 +43,17 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Changed
 
+* **The kiosk camera no longer runs on the interface thread**: frames are
+  read and QR-decoded by a small worker thread, and the preview and scan
+  result come back as queued Qt signals. A webcam read blocks until the
+  driver answers, so before this a slow or unplugged camera could freeze the
+  kiosk screen while it waited, and decode work made the clock and buttons
+  stutter while the camera ran. Stopping the camera now waits at most a
+  second for a wedged driver read and lets the daemon thread go, instead of
+  hanging the window. The public scanner API, failure count and retry flow
+  are unchanged. Files: `app/qr/scanner.py`, `tests/test_camera.py`,
+  `tests/test_ui.py`, `CHANGELOG.md`.
+
 * **Pages load when they are opened**: the dashboard is still ready as soon
   as the admin signs in, but the employee list, attendance history, reports,
   settings, QR codes and admin account pages are now built on first visit
