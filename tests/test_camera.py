@@ -97,6 +97,10 @@ def fake_cv2(monkeypatch):
     FakeCapture.FAIL_BACKENDS = set()
     FakeCapture.attempts = []
     FakeCapture.released = []
+    # Keep the default backend list deterministic. Windows-specific tests
+    # switch this to "win32" themselves, and every other test then runs the
+    # same one-backend path on Linux, Windows and macOS CI.
+    monkeypatch.setattr(scanner_module.sys, "platform", "linux")
     fake = types.SimpleNamespace(
         VideoCapture=FakeCapture,
         QRCodeDetector=FakeDetector,
