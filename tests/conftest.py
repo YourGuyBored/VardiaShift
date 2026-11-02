@@ -17,14 +17,58 @@ from pathlib import Path
 import pytest
 
 
+def _destroy_top_level_widgets(app) -> None:
+    """Close and delete every top-level widget while QApplication is alive.
+
+    PySide6 widgets collected after QApplication is torn down segfault the
+    interpreter. Shiboken also defers deletion of wrappers collected in
+    worker threads to the main thread, where it runs the next time Python
+    executes; if that lands in an unrelated test it can take the process
+    down. Doing it here keeps deletion in front of the test that caused it.
+    """
+    for _ in range(3):  # flush queued deleteLater() events
+        for widget in app.topLevelWidgets():
+            try:
+                # Kiosk windows gate close() behind a modal password dialog;
+                # force_close() is the shutdown path and must never block.
+                closer = getattr(widget, "force_close", None)
+                if callable(closer):
+                    closer()
+                else:
+                    widget.close()
+                widget.deleteLater()
+            except RuntimeError:
+                pass  # C++ object already gone
+        try:
+            app.processEvents()
+        except RuntimeError:
+            break
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _qt_ordered_teardown():
-    """Deterministically destroy Qt objects before pytest's shutdown GC.
+    """Destroy Qt objects before pytest's shutdown GC."""
+    yield
+    try:
+        from PySide6.QtWidgets import QApplication
 
-    PySide6 widgets collected *after* QApplication is torn down segfault the
-    interpreter (pytest's `pytest_unconfigure` runs a hard `gc.collect()`).
-    Closing and deleting every top-level widget while the application object
-    is still alive keeps teardown ordered and crash-free.
+        app = QApplication.instance()
+        if app is not None:
+            _destroy_top_level_widgets(app)
+    except Exception:
+        pass
+    gc.collect()
+
+
+@pytest.fixture(autouse=True)
+def _qt_between_tests():
+    """Flush deferred Qt deletion before the next test starts.
+
+    Only tests that touched Qt have an application to clean up. Shiboken
+    queues deletion of wrappers collected in worker threads until the main
+    thread runs Python again; if that lands in a later phone test it can take
+    the process down. Collect and flush here, without closing widgets the
+    next test may still expect, so the deletion happens in its own test.
     """
     yield
     try:
@@ -32,27 +76,10 @@ def _qt_ordered_teardown():
 
         app = QApplication.instance()
         if app is not None:
-            for _ in range(3):  # flush queued deleteLater() events
-                for widget in app.topLevelWidgets():
-                    try:
-                        # Kiosk windows gate close() behind a modal password
-                        # dialog; force_close() is the shutdown path and must
-                        # never block the test session.
-                        closer = getattr(widget, "force_close", None)
-                        if callable(closer):
-                            closer()
-                        else:
-                            widget.close()
-                        widget.deleteLater()
-                    except RuntimeError:
-                        pass  # C++ object already gone
-                try:
-                    app.processEvents()
-                except RuntimeError:
-                    break
+            gc.collect()
+            app.processEvents()
     except Exception:
         pass
-    gc.collect()
 
 
 ROOT = Path(__file__).resolve().parents[1]
