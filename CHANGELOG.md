@@ -12,10 +12,10 @@ All notable changes to VardiaShift are documented here. The format follows
   choose one. On Windows it tries DirectShow first and Media Foundation
   second, which is the difference for a fair number of USB webcams: Media
   Foundation opens the device, never delivers a frame, and the kiosk reported
-  "No camera detected" while the camera worked in every other app. The sweep
-  is backend-major, so a camera the first backend sees is found without
-  opening it twice, and it only falls back when the first pass is empty.
-  Named cameras get the same fallback. Failure messages now point at the two
+  "No camera detected" while the camera worked in every other app. Both
+  backends are swept and the results merged, so a built-in camera on one
+  backend cannot hide a USB camera that only the other backend sees. Named
+  cameras get the same fallback. Failure messages now point at the two
   causes an administrator can check: another app holding the camera, and the
   Windows desktop-app camera permission. Files: `app/qr/scanner.py`,
   `tests/test_camera.py`, `README.md`, `CHANGELOG.md`.

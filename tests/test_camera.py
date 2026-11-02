@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 import types
 
+import numpy as np
 import pytest
 
 import app.qr.scanner as scanner_module
@@ -29,9 +30,10 @@ class FakeDetector:
 
 
 class FakeFrame:
-    """Enough of an ndarray for a caller that only checks it arrived."""
+    """A real zero frame, so the reader thread can build a QImage from it."""
 
-    shape = (480, 640, 3)
+    def __new__(cls):
+        return np.zeros((480, 640, 3), dtype=np.uint8)
 
 
 class FakeCapture:
@@ -45,6 +47,10 @@ class FakeCapture:
 
     LIVE: set[int] = set()
     GHOST: set[int] = set()
+    #: Indices that only one backend can see. The key is the backend id, so a
+    #: test can put a built-in camera on DirectShow and a USB camera on Media
+    #: Foundation at a different index.
+    LIVE_BACKENDS: dict[int, set[int]] = {}
     #: Backends that cannot open any index in this scenario. Lets a test prove
     #: that DirectShow giving up still falls through to Media Foundation.
     FAIL_BACKENDS: set[int] = set()
@@ -59,10 +65,16 @@ class FakeCapture:
         FakeCapture.attempts.append(arguments)
         self.set_calls: list[tuple] = []
 
-    def isOpened(self):
+    def _live(self) -> bool:
         if self.backend in FakeCapture.FAIL_BACKENDS:
             return False
-        return self.index in FakeCapture.LIVE or self.index in FakeCapture.GHOST
+        live = set(FakeCapture.LIVE)
+        if self.backend is not None:
+            live |= FakeCapture.LIVE_BACKENDS.get(self.backend, set())
+        return self.index in live
+
+    def isOpened(self):
+        return self._live() or self.index in FakeCapture.GHOST
 
     def set(self, prop, value):
         self.set_calls.append((prop, value))
@@ -72,7 +84,7 @@ class FakeCapture:
         FakeCapture.released.append(self.index)
 
     def read(self):
-        if self.index in FakeCapture.LIVE:
+        if self._live():
             return True, FakeFrame()
         return False, None
 
@@ -81,12 +93,15 @@ class FakeCapture:
 def fake_cv2(monkeypatch):
     FakeCapture.LIVE = set()
     FakeCapture.GHOST = set()
+    FakeCapture.LIVE_BACKENDS = {}
     FakeCapture.FAIL_BACKENDS = set()
     FakeCapture.attempts = []
     FakeCapture.released = []
     fake = types.SimpleNamespace(
         VideoCapture=FakeCapture,
         QRCodeDetector=FakeDetector,
+        cvtColor=lambda frame, code: frame,
+        COLOR_BGR2RGB=4,
         CAP_PROP_FRAME_WIDTH=3,
         CAP_PROP_FRAME_HEIGHT=4,
         CAP_PROP_OPEN_TIMEOUT_MSEC=53,
@@ -242,7 +257,22 @@ def test_windows_tries_directshow_before_the_default(fake_cv2, monkeypatch):
     assert FakeCapture.attempts == [
         (0, fake_cv2.CAP_DSHOW),
         (1, fake_cv2.CAP_DSHOW),
+        (0, fake_cv2.CAP_MSMF),
+        (1, fake_cv2.CAP_MSMF),
     ]
+
+
+def test_windows_keeps_cameras_from_both_backends(fake_cv2, monkeypatch):
+    """A built-in camera must not hide the USB one on the other backend."""
+    from app.qr.scanner import list_cameras
+
+    monkeypatch.setattr(scanner_module.sys, "platform", "win32")
+    FakeCapture.LIVE_BACKENDS = {
+        fake_cv2.CAP_DSHOW: {0},
+        fake_cv2.CAP_MSMF: {1},
+    }
+
+    assert list_cameras(max_index=2) == [0, 1]
 
 
 def test_windows_falls_back_to_media_foundation(fake_cv2, monkeypatch):

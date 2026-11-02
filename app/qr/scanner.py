@@ -233,9 +233,9 @@ def list_cameras(
     thread should run it in the background.
 
     The sweep is backend-major: every index is tried with DirectShow (on
-    Windows) before falling back to Media Foundation. A camera that the first
-    backend sees is therefore found without opening it twice, and a machine
-    with several cameras does not pay the fallback cost per index.
+    Windows) before the fallback backend gets its own sweep. Both sweeps run,
+    because a built-in camera can answer on the first backend while the USB
+    webcam only appears on the second. The results are merged by index.
 
     ``should_stop`` is polled between devices, so a window that is closing can
     cut a long probe short instead of waiting it out.
@@ -246,17 +246,14 @@ def list_cameras(
         for index in range(limit):
             if should_stop is not None and should_stop():
                 return sorted(found)
-            if index in found:
-                continue
             capture = _open_capture(index, timeout_ms, (backend,))
             if capture is None:
                 continue
             _release(capture)
             found.add(index)
-        # The more compatible backend already answered; a second sweep would
-        # only rediscover the same cameras more slowly.
-        if found:
-            break
+    # Both backends are swept on purpose. A built-in camera can answer on the
+    # first backend while a USB webcam only appears on the second, and
+    # stopping after the first hit would hide the camera the admin plugged in.
     return sorted(found)
 
 
