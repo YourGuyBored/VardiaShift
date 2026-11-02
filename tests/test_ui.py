@@ -138,10 +138,41 @@ def test_main_window_builds_every_page(context, qt_app, admin_session):
     assert set(pages) == {
         "dashboard", "employees", "shifts", "attendance", "qr", "reports", "settings", "admin"
     }
+    # Only the page that is about to be shown is built up front. The rest
+    # load when somebody opens them, so sign-in does not wait on reports or
+    # settings that may never be visited.
+    assert set(window.pages) == {"dashboard"}
     for key in pages:
         window.show_page(key)
         assert window.stack.currentWidget() is pages[key]
         assert window.sidebar._buttons[key].isChecked()
+        assert key in window.pages
+    window.close()
+
+
+def test_view_attendance_builds_the_history_page_on_demand(
+    context, qt_app, admin_session, team
+):
+    """The employee shortcut must still work when the target is lazy."""
+    from app.main import build_pages
+    from app.ui.main_window import MainWindow
+
+    window = MainWindow(context)
+    build_pages(window, context)
+    window.show_page("employees")
+    employees = window.pages["employees"]
+    assert "attendance" not in window.pages
+
+    juan, _maria = team
+    employees.open_attendance.emit(juan.employee_id)
+    attendance = window.pages["attendance"]
+    assert window.stack.currentWidget() is attendance
+    assert attendance._employee_id == juan.employee_id
+
+    # Opening the same page again must reuse the widget, not build a second.
+    window.show_page("employees")
+    window.show_page("attendance")
+    assert window.pages["attendance"] is attendance
     window.close()
 
 

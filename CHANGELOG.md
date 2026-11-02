@@ -43,6 +43,18 @@ All notable changes to VardiaShift are documented here. The format follows
 
 ### Changed
 
+* **Pages load when they are opened**: the dashboard is still ready as soon
+  as the admin signs in, but the employee list, attendance history, reports,
+  settings, QR codes and admin account pages are now built on first visit
+  instead of all at once after sign-in. Every page used to query the database
+  before the main window appeared, which put about two seconds of blank
+  window in front of a full roster for pages that may never be opened. The
+  first visit builds and loads the page once; returning to it refreshes as
+  before. "View Attendance" on the Employees page still opens the chosen
+  employee's history, building the Attendance page on the way through.
+  Files: `app/main.py`, `app/ui/main_window.py`, `tests/test_ui.py`,
+  `CHANGELOG.md`.
+
 * **Refreshes are quiet when nothing changed**: the dashboard used to clear
   and rebuild every row on its thirty-second timer, on every page switch and
   on every minute tick, even when no clock had moved. At three hundred

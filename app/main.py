@@ -59,49 +59,103 @@ def _log_path() -> str:
     return str(app_paths().logs_dir / LOG_FILE_NAME)
 
 
-def build_pages(window, context) -> None:
-    """Instantiate every admin page once and register it with the shell."""
-    from app.ui.admin_account import AdminAccountPage
-    from app.ui.attendance_view import AttendancePage
+class _PageRegistry:
+    """Read-only page map that builds a page the first time it is looked up.
+
+    ``build_pages`` used to return a plain dict because every page already
+    existed. Pages are lazy now, so this keeps the old ``pages[key]`` access
+    working while still building only what somebody asks for.
+    """
+
+    def __init__(self, window, keys: tuple[str, ...]) -> None:
+        self._window = window
+        self._keys = keys
+
+    def __getitem__(self, key: str):
+        if key not in self._keys:
+            raise KeyError(key)
+        page = self._window.ensure_page(key)
+        if page is None:
+            raise KeyError(key)
+        return page
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._keys
+
+    def keys(self) -> list[str]:
+        return list(self._keys)
+
+    def values(self) -> list:
+        return [self[key] for key in self._keys]
+
+    def items(self) -> list[tuple[str, object]]:
+        return [(key, self[key]) for key in self._keys]
+
+
+def build_pages(window, context) -> _PageRegistry:
+    """Build the dashboard now, then load each other page when first opened.
+
+    Constructing all eight pages after sign-in meant the employee list,
+    attendance history, reports and settings all queried the database before
+    the dashboard was on screen. On a full roster that was a couple of
+    seconds of a blank window for pages the administrator may never visit.
+    The dashboard stays eager because it is the first page shown; the rest
+    are factories on the window.
+    """
     from app.ui.dashboard import DashboardPage
-    from app.ui.employee_management import EmployeePage
-    from app.ui.qr_management import QRManagementPage
-    from app.ui.reports import ReportsPage
-    from app.ui.settings import SettingsPage
-    from app.ui.shifts_view import ShiftsPage
 
-    dashboard = DashboardPage(context)
-    employees = EmployeePage(context)
-    shifts = ShiftsPage(context)
-    attendance = AttendancePage(context)
-    qr_page = QRManagementPage(context)
-    reports = ReportsPage(context)
-    settings_page = SettingsPage(context)
-    admin = AdminAccountPage(context)
+    window.register("dashboard", DashboardPage(context))
 
-    window.register("dashboard", dashboard)
-    window.register("employees", employees)
-    window.register("shifts", shifts)
-    window.register("attendance", attendance)
-    window.register("qr", qr_page)
-    window.register("reports", reports)
-    window.register("settings", settings_page)
-    window.register("admin", admin)
+    def employees_page():
+        from app.ui.employee_management import EmployeePage
 
-    # "View Attendance" on the Employees page jumps to that employee's history.
-    employees.open_attendance.connect(attendance.select_employee)
+        page = EmployeePage(context)
+        # "View Attendance" jumps to that employee's history. Attendance may
+        # not have been built yet, so build and show it on the way through.
+        page.open_attendance.connect(
+            lambda employee_id: _open_attendance(window, employee_id)
+        )
+        return page
+
+    def page_factory(module_name: str, class_name: str):
+        def build():
+            module = __import__(module_name, fromlist=[class_name])
+            return getattr(module, class_name)(context)
+
+        return build
+
+    window.register_factory("employees", employees_page)
+    for key, module_name, class_name in (
+        ("shifts", "app.ui.shifts_view", "ShiftsPage"),
+        ("attendance", "app.ui.attendance_view", "AttendancePage"),
+        ("qr", "app.ui.qr_management", "QRManagementPage"),
+        ("reports", "app.ui.reports", "ReportsPage"),
+        ("settings", "app.ui.settings", "SettingsPage"),
+        ("admin", "app.ui.admin_account", "AdminAccountPage"),
+    ):
+        window.register_factory(key, page_factory(module_name, class_name))
 
     window.show_page("dashboard")
-    return {
-        "dashboard": dashboard,
-        "employees": employees,
-        "shifts": shifts,
-        "attendance": attendance,
-        "qr": qr_page,
-        "reports": reports,
-        "settings": settings_page,
-        "admin": admin,
-    }
+    return _PageRegistry(
+        window,
+        ("dashboard", "employees", "shifts", "attendance", "qr", "reports", "settings", "admin"),
+    )
+
+
+def _open_attendance(window, employee_id: int) -> None:
+    """Show the Attendance page and select one employee's history."""
+    if window.ensure_page("attendance") is None:
+        return
+    window.show_page("attendance")
+    attendance = window.pages.get("attendance")
+    if attendance is not None:
+        attendance.select_employee(employee_id)
 
 
 class Application:

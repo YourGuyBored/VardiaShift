@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -198,6 +200,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._pages: dict[str, QWidget] = {}
+        self._factories: dict[str, Callable[[], QWidget]] = {}
         self._current_key = "dashboard"
 
         self._idle_timer = QTimer(self)
@@ -214,23 +217,57 @@ class MainWindow(QMainWindow):
 
     # -- page registry -------------------------------------------------------
     def register(self, key: str, widget: QWidget) -> None:
+        self._factories.pop(key, None)
         self._pages[key] = widget
         self.stack.addWidget(widget)
 
+    def register_factory(self, key: str, factory: Callable[[], QWidget]) -> None:
+        """Build a page the first time it is opened.
+
+        Every page used to be built after sign-in, which meant the employee
+        list, attendance history, reports and settings all loaded before the
+        dashboard appeared. On a full roster that held the window back by a
+        couple of seconds for pages the administrator might not visit. The
+        factory defers that work until the page is actually shown.
+        """
+        if key in self._pages:
+            return
+        self._factories[key] = factory
+
+    def ensure_page(self, key: str) -> QWidget | None:
+        """Return the page for ``key``, building it on first use."""
+        widget = self._pages.get(key)
+        if widget is not None:
+            return widget
+        factory = self._factories.pop(key, None)
+        if factory is None:
+            return None
+        widget = factory()
+        self.register(key, widget)
+        return widget
+
     @property
     def pages(self) -> dict[str, QWidget]:
+        """Pages built so far, keyed by navigation name."""
         return self._pages
 
     def show_page(self, key: str) -> None:
         widget = self._pages.get(key)
+        built_now = widget is None
+        if widget is None:
+            widget = self.ensure_page(key)
         if widget is None:
             return
         self._current_key = key
         self.sidebar.select(key)
         self.stack.setCurrentWidget(widget)
-        refresh = getattr(widget, "refresh", None)
-        if callable(refresh):
-            refresh()
+        # A page that was just built already loaded its data in its
+        # constructor. Refreshing it here would query everything twice, which
+        # is most of the cost of opening the Reports page for the first time.
+        if not built_now:
+            refresh = getattr(widget, "refresh", None)
+            if callable(refresh):
+                refresh()
         self.statusBar().showMessage(f"Data folder: {self.context.paths.root}")
 
     def refresh_current(self) -> None:
