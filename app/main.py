@@ -98,6 +98,26 @@ class _PageRegistry:
         return [(key, self[key]) for key in self._keys]
 
 
+#: Admin pages that are built on first visit. The page modules are imported
+#: by name inside ``page_factory``, so PyInstaller cannot find them by
+#: scanning imports. VardiaShift.spec lists them as hidden imports, and
+#: tests/test_packaging.py keeps the two lists in step.
+LAZY_PAGE_FACTORIES = (
+    ("shifts", "app.ui.shifts_view", "ShiftsPage"),
+    ("attendance", "app.ui.attendance_view", "AttendancePage"),
+    ("qr", "app.ui.qr_management", "QRManagementPage"),
+    ("reports", "app.ui.reports", "ReportsPage"),
+    ("settings", "app.ui.settings", "SettingsPage"),
+    ("admin", "app.ui.admin_account", "AdminAccountPage"),
+)
+
+#: Every module the packaged app has to bundle for a lazy page to open.
+LAZY_PAGE_MODULES = (
+    "app.ui.employee_management",
+    *(module for _key, module, _class in LAZY_PAGE_FACTORIES),
+)
+
+
 def build_pages(window, context) -> _PageRegistry:
     """Build the dashboard now, then load each other page when first opened.
 
@@ -131,14 +151,7 @@ def build_pages(window, context) -> _PageRegistry:
         return build
 
     window.register_factory("employees", employees_page)
-    for key, module_name, class_name in (
-        ("shifts", "app.ui.shifts_view", "ShiftsPage"),
-        ("attendance", "app.ui.attendance_view", "AttendancePage"),
-        ("qr", "app.ui.qr_management", "QRManagementPage"),
-        ("reports", "app.ui.reports", "ReportsPage"),
-        ("settings", "app.ui.settings", "SettingsPage"),
-        ("admin", "app.ui.admin_account", "AdminAccountPage"),
-    ):
+    for key, module_name, class_name in LAZY_PAGE_FACTORIES:
         window.register_factory(key, page_factory(module_name, class_name))
 
     window.show_page("dashboard")

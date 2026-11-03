@@ -32,6 +32,17 @@ a = Analysis(  # noqa: F821 - provided by PyInstaller
         # packaged app would have no camera support at all.
         "cv2",
         "numpy",
+        # Admin pages are imported by name when first opened, which static
+        # analysis cannot follow. Keep this list in step with
+        # app.main.LAZY_PAGE_MODULES or the packaged app raises
+        # ModuleNotFoundError when the administrator visits a page.
+        "app.ui.employee_management",
+        "app.ui.shifts_view",
+        "app.ui.attendance_view",
+        "app.ui.qr_management",
+        "app.ui.reports",
+        "app.ui.settings",
+        "app.ui.admin_account",
     ],
     hookspath=[],
     hooksconfig={},

@@ -3,6 +3,22 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+* **Admin pages in the packaged app**: the pages that load on first visit
+  are imported by name inside a factory, which PyInstaller cannot see while
+  scanning imports. The source tree worked and the packaged app raised
+  `ModuleNotFoundError` when an administrator opened Shifts, Attendance, QR
+  Codes, Reports, Settings or Admin Account. Every lazy page module is now
+  listed as a hidden import, and `tests/test_packaging.py` fails if the page
+  registry grows without the spec. The release workflow also runs
+  `scripts/check_bundle.py` against the finished executable, so a package
+  that lost a page cannot be published. Files: `app/main.py`,
+  `VardiaShift.spec`, `scripts/check_bundle.py`,
+  `.github/workflows/release.yml`, `tests/test_packaging.py`, `CHANGELOG.md`.
+
 ## [1.5.1] - 2026-11-03
 
 ### Added

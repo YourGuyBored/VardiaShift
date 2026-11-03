@@ -43,6 +43,9 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller --noconfirm VardiaShift.spec
 
+      - name: Check bundled admin pages
+        run: python scripts/check_bundle.py
+
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/VardiaShift -DestinationPath dist/${{ matrix.archive }}
