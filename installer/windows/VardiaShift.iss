@@ -7,7 +7,7 @@
 ;   iscc /DAppVersion=1.2.3 installer/windows/VardiaShift.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.5.1"
+  #define AppVersion "1.5.2"
 #endif
 
 [Setup]
