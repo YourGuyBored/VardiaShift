@@ -34,6 +34,10 @@ FILIPINO = {
     "Stop camera": "Isara ang camera",
     "Retry camera": "Subukan muli ang camera",
     "Camera unavailable": "Hindi magamit ang camera",
+    "Camera preview appears here": "Dito lalabas ang live na camera",
+    "Live camera. Hold the QR code inside the square.": (
+        "Live na camera. Ilagay ang QR code sa loob ng parisukat."
+    ),
     "Start the camera to scan with a webcam.": (
         "Buksan ang camera upang mag-scan gamit ang webcam."
     ),
@@ -93,11 +97,21 @@ def kiosk_text(english: str, language: str = LANGUAGE_ENGLISH) -> str:
     return english
 
 
+def kiosk_scanned(name: str, language: str = LANGUAGE_ENGLISH) -> str:
+    """The confirmation that a named employee's QR was read."""
+    if language == LANGUAGE_FILIPINO:
+        return f"Na-scan na si {name}."
+    return f"{name} has scanned."
+
+
 def kiosk_greeting(name: str, language: str = LANGUAGE_ENGLISH) -> str:
     """The personal greeting after a valid employee scan."""
     if language == LANGUAGE_FILIPINO:
-        return f"Kumusta, {name}! Pagkatapos, i-scan ang TIME IN o TIME OUT code."
-    return f"Hello, {name}! Now scan the TIME IN or TIME OUT code."
+        return (
+            f"{kiosk_scanned(name, language)} "
+            "Pagkatapos, i-scan ang TIME IN o TIME OUT code."
+        )
+    return f"{kiosk_scanned(name, language)} Now scan the TIME IN or TIME OUT code."
 
 
 def kiosk_week_line(this_week: str, goal: str, percent: int, language: str) -> str:

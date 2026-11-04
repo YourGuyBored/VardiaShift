@@ -3,6 +3,37 @@
 All notable changes to VardiaShift are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] - 2026-11-04
+
+### Added
+
+* **Live camera view in the kiosk**: the employee-facing screen now shows the
+  webcam feed while the camera is running, with a square guide for the printed
+  QR code. The reader still decodes frames on its worker thread and the
+  preview paints only the newest one, so the live view does not add a second
+  camera read or move image work onto the GUI thread. The result panel shows
+  the frame, the prompt says to hold the code inside the square, and the
+  existing camera picker and Start camera button keep working. Files:
+  `app/ui/attendance_kiosk.py`, `app/utils/language.py`, `README.md`,
+  `tests/test_ui.py`, `CHANGELOG.md`.
+
+* **A clear scan confirmation**: after an employee QR is read, the kiosk says
+  "Elio has scanned. Now scan the TIME IN or TIME OUT code." After a recorded
+  scan it says "Elio has scanned. Time in recorded." The Filipino kiosk uses
+  the same wording in Filipino. Files: `app/utils/language.py`,
+  `app/ui/attendance_kiosk.py`, `tests/test_language.py`, `tests/test_ui.py`,
+  `CHANGELOG.md`.
+
+### Fixed
+
+* **The same QR scanned again**: a camera decodes a held QR on every frame,
+  so the kiosk could reset a finished result and process the same paper again
+  before the employee lowered it. The scanner now emits one scan while a
+  payload stays in view and accepts it again after a short empty gap. The
+  kiosk also ignores an immediate repeat from a USB reader or a queued signal.
+  Files: `app/qr/scanner.py`, `app/ui/attendance_kiosk.py`,
+  `tests/test_camera.py`, `tests/test_ui.py`, `CHANGELOG.md`.
+
 ## [1.5.2] - 2026-11-03
 
 ### Fixed

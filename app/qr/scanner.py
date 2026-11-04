@@ -66,6 +66,14 @@ FRAME_POLL_S = 0.05
 #: the window still gets control back quickly.
 STOP_TIMEOUT_S = 1.0
 
+#: A camera sees the same QR in frame after frame. Remembering the last
+#: payload for this long after its last sighting means one presentation emits
+#: one scan, while a code taken away and shown again can still be scanned a
+#: second time. Two seconds rides out a brief hand shake or a run of missed
+#: frames, and is still short enough that the employee does not wait after
+#: moving the paper away.
+PAYLOAD_RELEASE_S = 2.0
+
 #: Appended to a failed camera start. The camera can be perfectly healthy and
 #: still be invisible to one process, so the message points at the two causes
 #: an administrator can actually check.
@@ -283,6 +291,10 @@ class CameraScanner(QObject):
         self._stop_event.set()
         self._failures = 0
         self._error_reported = False
+        #: The payload most recently seen in the frame, and when it was last
+        #: seen. Used to keep one held QR from firing the kiosk repeatedly.
+        self._last_payload: str | None = None
+        self._payload_seen_at = 0.0
 
     @property
     def available(self) -> bool:
@@ -333,6 +345,8 @@ class CameraScanner(QObject):
                     self._camera_index = index
                     self._failures = 0
                     self._error_reported = False
+                    self._last_payload = None
+                    self._payload_seen_at = 0.0
                     self._stop_event.clear()
                     self._reader = threading.Thread(
                         target=self._read_loop,
@@ -370,6 +384,8 @@ class CameraScanner(QObject):
         self._camera_index = None
         self._detector = None
         self._failures = 0
+        self._last_payload = None
+        self._payload_seen_at = 0.0
         if capture is not None:
             _release(capture)
 
@@ -423,8 +439,32 @@ class CameraScanner(QObject):
             self._note_failure(f"The camera feed could not be read ({exc}).")
             return
         self._failures = 0
-        if payload:
-            self.decoded.emit(payload.strip())
+        self._emit_payload_once(payload)
+
+    def _emit_payload_once(self, payload: str | None) -> None:
+        """Emit a decoded payload once while it stays in front of the camera.
+
+        A camera decodes the same QR on every frame. Emitting each frame made
+        the kiosk reset a finished result and process the same code again
+        before the employee could lower the paper. Remembering the last
+        payload fixes that; an empty frame for ``PAYLOAD_RELEASE_S`` clears
+        the memory, so the same code can be scanned again for a later action.
+        """
+        text = (payload or "").strip()
+        now = time.monotonic()
+        if not text:
+            if (
+                self._last_payload is not None
+                and now - self._payload_seen_at >= PAYLOAD_RELEASE_S
+            ):
+                self._last_payload = None
+            return
+        if text != self._last_payload:
+            self._last_payload = text
+            self._payload_seen_at = now
+            self.decoded.emit(text)
+            return
+        self._payload_seen_at = now
 
     def _note_failure(self, message: str) -> None:
         self._failures += 1

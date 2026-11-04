@@ -277,6 +277,13 @@ window, turn off *Kiosk fullscreen* in Settings → Kiosk - the
 setting is honoured, and the window keeps its size and position between
 sessions.
 
+When the webcam is running, the kiosk shows the live camera view beside the
+prompt. A square guide marks where the printed QR should sit, which makes it
+easy to line up the paper before the scanner reads it. The preview paints the
+newest frame on the interface thread; reading and decoding still happen on the
+camera worker, so the live view does not add a second camera loop or make the
+kiosk stutter.
+
 Optionally, the kiosk can photograph each scan. **Save camera photo on scan**
 in Settings → Kiosk is off by default; when it is on and the kiosk camera is
 running, the moment of every recorded scan is saved as a PNG in the photos
@@ -301,7 +308,7 @@ time-in when the employee is not working, and time-out when they are.
 **Arriving:**
 
 1. Scan your personal employee QR.
-2. The kiosk greets you by name.
+2. The kiosk says **Elio has scanned** and greets you by name.
 3. Scan the **TIME IN** code (skipped entirely in single-scan mode).
 
 ```text
@@ -338,10 +345,10 @@ Mistakes are explained in plain language (`Already Timed In`, `Not Timed In`,
 
 ### Scanning hardware
 
-* **Webcam** - the kiosk decodes the camera feed directly. Webcam scanning
-  ships in the downloads, so there is nothing to install: press **Start
-  camera**, or choose a specific device from the list when more than one is
-  plugged in. The kiosk looks for cameras in the background, so it opens
+* **Webcam** - the kiosk decodes the camera feed directly and shows the live
+  view with a square alignment guide. Webcam scanning ships in the downloads,
+  so there is nothing to install: press **Start camera**, or choose a specific
+  device from the list when more than one is plugged in. The kiosk looks for cameras in the background, so it opens
   immediately whether or not one is connected. On Windows it asks DirectShow
   first and Media Foundation second, because some USB webcams are invisible to
   one of those and fine in the other. If the camera works in another app but

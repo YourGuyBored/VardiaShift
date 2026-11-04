@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QThread, Qt, QTimer, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QRect, QThread, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -38,6 +39,7 @@ from app.ui import theme
 from app.utils.language import (
     kiosk_greeting,
     kiosk_remaining_line,
+    kiosk_scanned,
     kiosk_text,
     kiosk_week_line,
 )
@@ -51,6 +53,16 @@ from app.ui.window_sizing import (
 STATE_IDLE = "idle"
 STATE_EMPLOYEE = "employee"
 STATE_RESULT = "result"
+
+#: The camera suppresses a held QR, but a USB reader or a queued signal can
+#: still deliver the same payload twice. Ignore an immediate repeat so a
+#: finished result is not reset a fraction of a second after it appears.
+SCAN_COOLDOWN_S = 1.5
+
+#: The live preview is deliberately compact: it is a framing aid, not a
+#: video player. The camera reader already runs off the GUI thread, so the
+#: only work here is painting the newest frame.
+PREVIEW_MIN_HEIGHT = 150
 
 #: The one big panel in the middle of the kiosk. Every state is the same
 #: block - a solid rule down the leading edge instead of a dashed border, the
@@ -131,6 +143,89 @@ class _CameraProbe(QThread):
             self.found.emit([int(index) for index in indices])
 
 
+class KioskCameraPreview(QWidget):
+    """Live camera well with a square guide for the printed QR.
+
+    The camera reader decodes and copies frames on its worker thread. This
+    widget only keeps the newest copy and paints it, so the preview adds one
+    scaled draw per delivered frame and no second camera read. The guide is
+    drawn over the image and stays centred when the frame is letterboxed.
+    """
+
+    def __init__(self, placeholder: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._image: QImage | None = None
+        self._placeholder = placeholder or "Camera preview appears here"
+        self.setMinimumHeight(PREVIEW_MIN_HEIGHT)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.setAccessibleName("Live camera preview")
+        self.setToolTip("Live camera view. Hold the QR code inside the square.")
+
+    def set_image(self, image: QImage) -> None:
+        self._image = image
+        self.update()
+
+    def clear(self, placeholder: str | None = None) -> None:
+        self._image = None
+        if placeholder is not None:
+            self._placeholder = placeholder
+        self.update()
+
+    def has_image(self) -> bool:
+        return self._image is not None and not self._image.isNull()
+
+    def placeholder(self) -> str:
+        return self._placeholder
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        well = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.BG))
+        painter.drawRoundedRect(well, 10, 10)
+
+        image = self._image
+        if image is None or image.isNull():
+            font = painter.font()
+            font.setPointSize(10)
+            painter.setFont(font)
+            painter.setPen(QColor(theme.ACCENT_LIGHT))
+            painter.drawText(
+                well.adjusted(14, 14, -14, -14),
+                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                self._placeholder,
+            )
+            return
+
+        # Keep the whole frame, never crop it: the employee needs to see
+        # whether the paper is fully inside the camera, not a flattering
+        # centre cut.
+        scaled = image.size()
+        scaled.scale(well.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        target = QRect(0, 0, scaled.width(), scaled.height())
+        target.moveCenter(well.center())
+        painter.drawImage(target, image)
+
+        side = max(48, int(min(target.width(), target.height()) * 0.62))
+        guide = QRect(0, 0, side, side)
+        guide.moveCenter(target.center())
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # A pale halo keeps the guide readable over a dark desk, while the
+        # brand-coloured line stays visible on a white sheet of paper.
+        halo = QPen(QColor(255, 255, 255, 150), 6)
+        halo.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(halo)
+        painter.drawRoundedRect(guide, 12, 12)
+        pen = QPen(QColor(theme.PRIMARY), 3)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawRoundedRect(guide, 12, 12)
+
+
 class KioskWindow(QMainWindow):
     """Full-screen employee scanning screen."""
 
@@ -151,6 +246,10 @@ class KioskWindow(QMainWindow):
         # that happens next (opt-in photo on scan).
         self._last_frame = None
         self._frame_seen_at = 0.0
+        # A finished scan must stay on screen even if the same code is still
+        # in view or a USB reader sends it twice.
+        self._last_scan_payload = ""
+        self._last_scan_at = 0.0
         # Leaving the kiosk always passes the password gate; only a forced
         # close (application shutdown) bypasses it.
         self._exit_allowed = False
@@ -324,7 +423,13 @@ class KioskWindow(QMainWindow):
         self._result_details.setObjectName("CardHint")
         layout.addWidget(self._result_details)
 
-        layout.addStretch(1)
+        # The employee needs to see where the paper is before the scanner can
+        # read it. The preview is the only extra widget; the reader still
+        # decodes on its worker thread.
+        self._preview = KioskCameraPreview(
+            self._tr("Camera preview appears here")
+        )
+        layout.addWidget(self._preview, 1)
 
         self._reset_button = PrimaryButton(self._tr("Scan again"), self.reset)
         layout.addWidget(self._reset_button)
@@ -383,6 +488,7 @@ class KioskWindow(QMainWindow):
                     "reader works normally, or use manual entry."
                 )
             )
+            self._preview.clear(self._tr("Camera unavailable"))
             self._camera = None
         else:
             from app.qr.scanner import CameraScanner
@@ -390,13 +496,14 @@ class KioskWindow(QMainWindow):
             self._camera = CameraScanner(self)
             self._camera.decoded.connect(self.handle_scan)
             self._camera.camera_error.connect(self._on_camera_error)
-            # Photos of scans (opt-in) come from the live camera feed. The
-            # newest frame is remembered; a scan that happens while the feed
-            # runs snaps that moment.
-            self._camera.frame_ready.connect(self._remember_frame)
+            # One connection feeds both the live view and the opt-in photo of
+            # the scanning moment. The frame is already decoded off-thread.
+            self._camera.frame_ready.connect(self._on_camera_frame)
             # The kiosk opens now; the list of cameras arrives when the
             # background probe finishes.
-            self._camera_hint.setText("Start the camera to scan with a webcam.")
+            self._camera_hint.setText(
+                self._tr("Start the camera to scan with a webcam.")
+            )
             self._start_camera_probe()
 
         manual_allowed = self.context.settings.settings.allow_manual_clock
@@ -488,7 +595,8 @@ class KioskWindow(QMainWindow):
         if self._camera.running:
             self._camera.stop()
             self._camera_button.setText(self._tr("Start camera"))
-            self._camera_hint.setText("Camera stopped.")
+            self._camera_hint.setText(self._tr("Camera stopped."))
+            self._preview.clear(self._tr("Camera stopped."))
         else:
             # Opening a device and waiting for its first frame takes a moment,
             # so the click acknowledges itself instead of appearing to do
@@ -501,7 +609,20 @@ class KioskWindow(QMainWindow):
             self._camera_button.setText(
                 self._tr("Stop camera") if ok else self._tr("Start camera")
             )
-            self._camera_hint.setText(message)
+            if ok:
+                self._camera_hint.setText(
+                    self._tr(
+                        "Live camera. Hold the QR code inside the square."
+                    )
+                )
+            else:
+                self._camera_hint.setText(message)
+                self._preview.clear(self._tr("Camera preview appears here"))
+
+    def _on_camera_frame(self, image: QImage) -> None:
+        """Paint the newest frame and remember it for the opt-in photo."""
+        self._preview.set_image(image)
+        self._remember_frame(image)
 
     def _remember_frame(self, image) -> None:
         """Keep the newest camera frame so the next scan can be photographed."""
@@ -555,6 +676,7 @@ class KioskWindow(QMainWindow):
         """
         if self._camera is not None:
             self._camera.stop()
+        self._preview.clear(self._tr("Camera stopped."))
         self._camera_button.setText(self._tr("Retry camera"))
         self._camera_hint.setText(
             f"{message} The USB scanner and manual entry still work - "
@@ -567,6 +689,8 @@ class KioskWindow(QMainWindow):
     # -- public API ----------------------------------------------------------
     def show_kiosk(self) -> None:
         self.reset()
+        self._last_scan_payload = ""
+        self._last_scan_at = 0.0
         self._exit_allowed = False
         if self.context.settings.settings.kiosk_fullscreen:
             self.showFullScreen()
@@ -626,11 +750,21 @@ class KioskWindow(QMainWindow):
 
     def handle_scan(self, payload: str) -> None:
         """Entry point for every scanner type."""
-        if self._state == STATE_RESULT:
-            self.reset()
         text = (payload or "").strip()
         if not text:
             return
+        now = time.monotonic()
+        if (
+            text == self._last_scan_payload
+            and now - self._last_scan_at < SCAN_COOLDOWN_S
+        ):
+            # The same code is still in front of the camera, or a USB reader
+            # sent it twice. Keep the result the employee is reading.
+            return
+        self._last_scan_payload = text
+        self._last_scan_at = now
+        if self._state == STATE_RESULT:
+            self.reset()
         try:
             self._dispatch(text)
         except Exception as exc:  # pragma: no cover - defensive
@@ -747,7 +881,11 @@ class KioskWindow(QMainWindow):
 
     def _show_time_in_success(self, result) -> None:
         clock = self.context.clock
-        self._status.setText(self._tr("Time in recorded"))
+        language = self.context.settings.settings.kiosk_language
+        self._status.setText(
+            f"{kiosk_scanned(result.full_name, language)} "
+            f"{self._tr('Time in recorded')}"
+        )
         self._set_prompt(self._tr("TIME IN SUCCESSFUL"), "time_in")
         self._set_result_title(self._tr("TIME IN SUCCESSFUL"), theme.SUCCESS)
         self._result_name.setText(result.full_name)
@@ -764,7 +902,10 @@ class KioskWindow(QMainWindow):
     def _show_time_out_success(self, result) -> None:
         clock = self.context.clock
         language = self.context.settings.settings.kiosk_language
-        self._status.setText(self._tr("Time out recorded"))
+        self._status.setText(
+            f"{kiosk_scanned(result.full_name, language)} "
+            f"{self._tr('Time out recorded')}"
+        )
         self._set_prompt(self._tr("TIME OUT SUCCESSFUL"), "time_out")
         self._set_result_title(self._tr("TIME OUT SUCCESSFUL"), theme.PRIMARY)
         self._result_name.setText(result.full_name)

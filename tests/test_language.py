@@ -12,6 +12,7 @@ from app.utils.language import (
     LANGUAGE_FILIPINO,
     kiosk_greeting,
     kiosk_remaining_line,
+    kiosk_scanned,
     kiosk_text,
     kiosk_week_line,
     language_label,
@@ -32,6 +33,16 @@ def test_known_strings_translate():
         kiosk_text("SCAN YOUR EMPLOYEE QR CODE", LANGUAGE_FILIPINO)
         == "I-SCAN ANG QR CODE NG EMPLEYADO"
     )
+    assert (
+        kiosk_text("Camera preview appears here", LANGUAGE_FILIPINO)
+        == "Dito lalabas ang live na camera"
+    )
+    assert (
+        kiosk_text(
+            "Live camera. Hold the QR code inside the square.", LANGUAGE_FILIPINO
+        )
+        == "Live na camera. Ilagay ang QR code sa loob ng parisukat."
+    )
 
 
 def test_unknown_strings_fall_back_to_english():
@@ -42,9 +53,14 @@ def test_unknown_strings_fall_back_to_english():
 
 
 def test_composed_lines_carry_values():
+    assert kiosk_scanned("Ana", LANGUAGE_FILIPINO) == "Na-scan na si Ana."
     assert (
         kiosk_greeting("Ana", LANGUAGE_FILIPINO)
-        == "Kumusta, Ana! Pagkatapos, i-scan ang TIME IN o TIME OUT code."
+        == "Na-scan na si Ana. Pagkatapos, i-scan ang TIME IN o TIME OUT code."
+    )
+    assert (
+        kiosk_greeting("Ana", LANGUAGE_ENGLISH)
+        == "Ana has scanned. Now scan the TIME IN or TIME OUT code."
     )
     assert (
         kiosk_week_line("8h 00m", "8h 00m", 100, LANGUAGE_FILIPINO)
@@ -119,7 +135,10 @@ def test_the_kiosk_result_screens_translate(context, qt_app, admin, employee, fr
 
     context.attendance.set_now_provider(lambda: frozen.at(10, 0, 1))
     window._perform_clock("time_in", "time_in:1")
-    assert window._status.text() == "Naitala ang time in"
+    assert (
+        window._status.text()
+        == f"Na-scan na si {employee.full_name}. Naitala ang time in"
+    )
     assert window._result_title.text() == "TAGUMPAY ANG TIME IN"
     assert "Maging masikap ngayong araw!" in window._result_details.text()
     window.deleteLater()

@@ -29,6 +29,27 @@ class FakeDetector:
         return "", None, None
 
 
+class PayloadDetector:
+    """Returns payloads in order, one per frame, then empty frames."""
+
+    def __init__(self, payloads):
+        self._payloads = list(payloads)
+
+    def detectAndDecode(self, frame):
+        payload = self._payloads.pop(0) if self._payloads else ""
+        return payload, None, None
+
+
+class FrameCapture:
+    """A capture that always says it read a real frame."""
+
+    def read(self):
+        return True, FakeFrame()
+
+    def release(self):
+        pass
+
+
 class FakeFrame:
     """A real zero frame, so the reader thread can build a QImage from it."""
 
@@ -334,6 +355,92 @@ def test_explicit_index_is_honoured(fake_cv2):
         assert ok is True
         assert scanner.camera_index == 2
         assert {arguments[0] for arguments in FakeCapture.attempts} == {2}
+    finally:
+        scanner.stop()
+
+
+# -- one presentation, one scan ---------------------------------------------
+def test_camera_emits_a_held_payload_once(fake_cv2, qt_app):
+    """A QR sitting in front of the camera is decoded every frame.
+
+    Emitting every decode made the kiosk reset a finished result and process
+    the same paper again before the employee could lower it.
+    """
+    from app.qr.scanner import CameraScanner
+
+    payload = "SHIFTORA1|E|" + "a" * 24
+    scanner = CameraScanner()
+    seen: list[str] = []
+    scanner.decoded.connect(seen.append)
+    scanner._capture = FrameCapture()
+    scanner._detector = PayloadDetector([payload, payload, payload])
+    scanner._stop_event.clear()
+    try:
+        for _ in range(3):
+            scanner._grab()
+        assert seen == [payload]
+    finally:
+        scanner.stop()
+
+
+def test_camera_keeps_a_payload_through_a_short_dropout(
+    fake_cv2, qt_app, monkeypatch
+):
+    """A missed decode or two must not turn a held QR into a second scan."""
+    from app.qr.scanner import CameraScanner
+
+    monkeypatch.setattr(scanner_module, "PAYLOAD_RELEASE_S", 10.0)
+    payload = "SHIFTORA1|E|" + "a" * 24
+    scanner = CameraScanner()
+    seen: list[str] = []
+    scanner.decoded.connect(seen.append)
+    scanner._capture = FrameCapture()
+    scanner._detector = PayloadDetector([payload, "", payload])
+    scanner._stop_event.clear()
+    try:
+        for _ in range(3):
+            scanner._grab()
+        assert seen == [payload]
+    finally:
+        scanner.stop()
+
+
+def test_camera_accepts_the_same_payload_after_it_leaves_view(
+    fake_cv2, qt_app, monkeypatch
+):
+    from app.qr.scanner import CameraScanner
+
+    monkeypatch.setattr(scanner_module, "PAYLOAD_RELEASE_S", 0.0)
+    payload = "SHIFTORA1|E|" + "a" * 24
+    scanner = CameraScanner()
+    seen: list[str] = []
+    scanner.decoded.connect(seen.append)
+    scanner._capture = FrameCapture()
+    scanner._detector = PayloadDetector([payload, "", payload])
+    scanner._stop_event.clear()
+    try:
+        for _ in range(3):
+            scanner._grab()
+        assert seen == [payload, payload]
+    finally:
+        scanner.stop()
+
+
+def test_camera_accepts_a_different_payload_without_a_gap(fake_cv2, qt_app):
+    from app.qr.scanner import CameraScanner
+
+    first = "SHIFTORA1|E|" + "a" * 24
+    second = "SHIFTORA1|IN|" + "b" * 24
+    scanner = CameraScanner()
+    seen: list[str] = []
+    scanner.decoded.connect(seen.append)
+    scanner._capture = FrameCapture()
+    scanner._detector = PayloadDetector([first, second])
+    scanner._stop_event.clear()
+    try:
+        for _ in range(2):
+            scanner._grab()
+        assert seen == [first, second]
     finally:
         scanner.stop()
 

@@ -1564,6 +1564,76 @@ def test_kiosk_recovers_to_wedge_after_camera_loss(
     qt_app.processEvents()
 
 
+def test_kiosk_live_preview_paints_the_newest_camera_frame(context, qt_app):
+    from PySide6.QtGui import QImage
+
+    from app.ui.attendance_kiosk import KioskWindow
+
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+    frame = QImage(320, 240, QImage.Format.Format_RGB32)
+    frame.fill(0x112233)
+    window._camera.frame_ready.emit(frame)
+    qt_app.processEvents()
+
+    assert window._preview.has_image()
+    assert window._last_frame is not None
+    assert not window._preview.grab().isNull()
+
+    window._preview.clear("Camera stopped.")
+    assert not window._preview.has_image()
+    assert window._preview.placeholder() == "Camera stopped."
+    window.force_close()
+    qt_app.processEvents()
+
+
+def test_kiosk_ignores_a_repeated_scan_while_showing_the_result(
+    context, qt_app, employee
+):
+    from app.ui.attendance_kiosk import KioskWindow
+
+    payload = build_payload("employee", employee.qr_token)
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    window.handle_scan(payload)
+    assert window._state == "employee"
+    assert window._result_title.text() == "Employee confirmed"
+    assert f"{employee.full_name} has scanned." in window._status.text()
+
+    # The camera sees the same paper again before the employee lowers it.
+    window.handle_scan(payload)
+    assert window._state == "employee"
+    assert window._employee is not None
+    assert window._result_title.text() == "Employee confirmed"
+    window.force_close()
+    qt_app.processEvents()
+
+
+def test_kiosk_accepts_the_next_qr_immediately_after_the_employee_qr(
+    context, qt_app, employee
+):
+    from app.ui.attendance_kiosk import KioskWindow
+
+    employee_payload = build_payload("employee", employee.qr_token)
+    time_in_payload = build_payload(
+        QR_TIME_IN, context.qr.ensure_action_token(QR_TIME_IN).token
+    )
+    window = KioskWindow(context)
+    window.show()
+    qt_app.processEvents()
+
+    window.handle_scan(employee_payload)
+    window.handle_scan(time_in_payload)
+
+    assert window._result_title.text() == "TIME IN SUCCESSFUL"
+    assert f"{employee.full_name} has scanned." in window._status.text()
+    window.force_close()
+    qt_app.processEvents()
+
+
 # -- automatic single-scan mode ----------------------------------------------
 def test_kiosk_auto_mode_times_in_with_one_scan(context, qt_app, admin_session, frozen):
     from app.ui.attendance_kiosk import KioskWindow
@@ -2230,6 +2300,9 @@ def test_kiosk_photos_stay_off_by_default(context, qt_app, admin_session, team, 
     context.attendance.set_now_provider(lambda: frozen.at(10, 0, 1))
     window._employee = employee
     window._perform_clock("time_in", "time_in:1")
-    assert window._status.text() == "Time in recorded"
+    assert (
+        window._status.text()
+        == f"{employee.full_name} has scanned. Time in recorded"
+    )
     assert list(context.paths.photos_dir.rglob("*.png")) == []
     window.deleteLater()
